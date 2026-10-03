@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="title desc">
   <title id="title">mycodex</title>
-  <desc id="desc">mycodex: multi-account Codex for Linux hosts. Persistent accounts, shared threads, automatic rotation and phone remote control for the official Codex CLI, with no dependencies. By Manoj Verma (@manojvermamv).</desc>
+  <desc id="desc">mycodex: multi-account Codex for Linux hosts. Persistent accounts, one shared thread list, automatic account rotation through a local proxy, and phone remote control for the official Codex CLI. Python standard library only. By Manoj Verma (@manojvermamv).</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0a101d"/>
@@ -22,6 +22,7 @@
   <rect x="0.5" y="0.5" width="1279" height="399" rx="24" fill="url(#bg)" stroke="#1f2b40"/>
   <rect x="0.5" y="0.5" width="1279" height="399" rx="24" fill="url(#dots)" opacity="0.6"/>
   <rect x="64" y="56" width="132" height="4" rx="2" fill="url(#glow)"/>
+  <text x="212" y="63" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" fill="#6b7a93">v0.2 · MIT</text>
 
   <!-- wordmark -->
   <text x="62" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="80" font-weight="700" fill="#e6edf3"><tspan fill="#22d3ee">&#x276F;</tspan> mycodex</text>
@@ -33,9 +34,9 @@
     <circle cx="86" cy="244" r="5" fill="#22d3ee"/>
     <text x="100" y="250">persistent accounts</text>
 
-    <rect x="290" y="226" width="250" height="36" rx="18" fill="#0f2233" stroke="#155e75"/>
+    <rect x="290" y="226" width="236" height="36" rx="18" fill="#0f2233" stroke="#155e75"/>
     <circle cx="312" cy="244" r="5" fill="#22d3ee"/>
-    <text x="326" y="250">shared ~/.codex threads</text>
+    <text x="326" y="250">one shared thread list</text>
 
     <rect x="64" y="274" width="196" height="36" rx="18" fill="#0f2a1e" stroke="#166534"/>
     <circle cx="86" cy="292" r="5" fill="#4ade80"/>
@@ -46,8 +47,8 @@
     <text x="308" y="298">phone remote control</text>
   </g>
 
-  <!-- stack -->
-  <text y="352" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="17" fill="#9fb0c8"><tspan x="64" fill="#22d3ee">mycodex</tspan><tspan x="152">&#x2192;</tspan><tspan x="178" fill="#e6edf3">official codex</tspan><tspan x="340">&#xB7;</tspan><tspan x="360">no dependencies</tspan></text>
+  <!-- request path -->
+  <text y="352" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="17" fill="#6b7a93"><tspan x="64" fill="#e6edf3">codex</tspan><tspan x="128">&#x2192;</tspan><tspan x="154" fill="#22d3ee">mycodex proxy</tspan><tspan x="300">&#x2192;</tspan><tspan x="326" fill="#e6edf3">chatgpt.com</tspan></text>
 
   <!-- terminal window -->
   <g filter="url(#shadow)">
@@ -59,17 +60,17 @@
     <text x="938" y="70" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#6b7a93">admin@ec2 ~/project</text>
   </g>
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="14.5">
-    <text x="672" y="108" fill="#9fb0c8"><tspan fill="#4ade80">$</tspan> mycodex profile list</text>
+    <text x="672" y="108" fill="#9fb0c8"><tspan fill="#4ade80">$</tspan> mycodex quota</text>
     <!-- panel: header box joined to the body -->
     <rect x="672.5" y="118.5" width="532" height="106" rx="2" fill="none" stroke="#22d3ee"/>
     <line x1="672.5" y1="146.5" x2="1204.5" y2="146.5" stroke="#22d3ee"/>
-    <text y="138"><tspan x="682" fill="#22d3ee" font-weight="700">Mycodex Profiles</tspan><tspan x="836" fill="#9fb0c8">2 profile(s)</tspan></text>
-    <text y="167" fill="#9fb0c8" font-weight="700"><tspan x="682">PROFILE</tspan><tspan x="862">STATUS</tspan><tspan x="950">ROTATION</tspan><tspan x="1066">REMOTE</tspan></text>
-    <text y="189"><tspan x="682" fill="#4ade80">* account-one</tspan><tspan x="862" fill="#4ade80">ready</tspan><tspan x="950" fill="#4ade80">enabled</tspan><tspan x="1066" fill="#22d3ee">relay</tspan></text>
-    <text y="211"><tspan x="700" fill="#e6edf3">account-two</tspan><tspan x="862" fill="#4ade80">ready</tspan><tspan x="950" fill="#4ade80">enabled</tspan><tspan x="1066" fill="#9fb0c8">-</tspan></text>
-    <text x="672" y="256" fill="#9fb0c8"><tspan fill="#4ade80">$</tspan> mycodex --profile account-one remote-control</text>
-    <text y="280" fill="#9fb0c8"><tspan x="688">Connection</tspan><tspan x="800" fill="#4ade80">connected</tspan><tspan x="900">&#xB7;</tspan><tspan x="918">mode</tspan><tspan x="964" fill="#22d3ee">rotating</tspan></text>
-    <text y="304" fill="#9fb0c8"><tspan x="688">Paired</tspan><tspan x="800" fill="#e6edf3">Android phone</tspan><tspan x="934">&#xB7;</tspan><tspan x="952">pool</tspan><tspan x="998" fill="#4ade80">2 ready</tspan></text>
+    <text y="138"><tspan x="682" fill="#22d3ee" font-weight="700">Mycodex Quota</tspan><tspan x="826" fill="#9fb0c8">2/2 ready</tspan></text>
+    <text y="167" fill="#9fb0c8" font-weight="700"><tspan x="682">PROFILE</tspan><tspan x="800">PLAN</tspan><tspan x="862">LEFT</tspan><tspan x="1126">READY</tspan></text>
+    <text y="189"><tspan x="682" fill="#4ade80">* work</tspan><tspan x="800" fill="#22d3ee">plus</tspan><tspan x="862" fill="#e6edf3">5h 92% | weekly 71%</tspan><tspan x="1126" fill="#4ade80">yes</tspan></text>
+    <text y="211"><tspan x="700" fill="#e6edf3">personal</tspan><tspan x="800" fill="#22d3ee">plus</tspan><tspan x="862" fill="#e6edf3">weekly 100%</tspan><tspan x="1126" fill="#4ade80">yes</tspan></text>
+    <text x="672" y="256" fill="#9fb0c8"><tspan fill="#4ade80">$</tspan> mycodex rotation log -f</text>
+    <text y="280" fill="#9fb0c8"><tspan x="688" fill="#fbbf24">paused</tspan><tspan x="776" fill="#e6edf3">work</tspan><tspan x="852">usage limit · until 14:56</tspan></text>
+    <text y="304" fill="#9fb0c8"><tspan x="688" fill="#22d3ee">switch</tspan><tspan x="776" fill="#e6edf3">work &#x2192; personal</tspan><tspan x="940" fill="#4ade80">same thread</tspan></text>
   </g>
 
   <!-- author -->
