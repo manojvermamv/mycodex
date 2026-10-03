@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -211,7 +212,8 @@ def status(as_json: bool = False) -> int:
 
 
 # ----------------------------------------------------------------------------- server access
-def _server_socket() -> tuple[str, str | None]:
+def server_socket() -> tuple[str, str | None]:
+    """Control socket of the running remote-control server (the service's first) and its account."""
     server = remote.service_server()
     if server and server["socket"]:
         return server["socket"], server["proc"].profile
@@ -221,8 +223,15 @@ def _server_socket() -> tuple[str, str | None]:
     raise SystemExit("Error: no remote-control server is running (start one with `mycodex remote start`)")
 
 
+def socket_path() -> int:
+    """Print the control socket, for `mycodex app-server proxy --sock "$(mycodex remote socket)"`."""
+    sock, _ = server_socket()
+    print(sock)
+    return 0
+
+
 def pair(wait: bool = True) -> int:
-    sock, profile = _server_socket()
+    sock, profile = server_socket()
     with appserver.AppServer(sock, timeout=30) as server:
         result = server.result("remoteControl/pairing/start", {"manualCode": True})
         code = result.get("manualPairingCode") or result.get("pairingCode")
@@ -253,7 +262,7 @@ def pair(wait: bool = True) -> int:
 
 
 def clients(revoke: str | None = None) -> int:
-    sock, _ = _server_socket()
+    sock, _ = server_socket()
     with appserver.AppServer(sock, timeout=30) as server:
         status_ = server.result("remoteControl/status/read")
         env = status_.get("environmentId")
@@ -277,38 +286,58 @@ def logs(follow: bool, lines: int) -> int:
     return subprocess.call(args, env=paths.tool_env())
 
 
-def seed(directory: str | None, name: str | None, message: str | None) -> int:
-    """Create (or reuse) a project for DIR and start a thread there through the live server,
-    so it carries the server's provider tag and the phone lists the project."""
-    root = str(Path(directory or os.getcwd()).expanduser().resolve())
-    sock, profile = _server_socket()
+def seed(directory: str | None, name: str | None, message: str | None, project_name: str | None = None,
+         wait: bool = True) -> int:
+    """Start a new thread inside a project, through the running server's app-server API.
+
+    Codex files a thread under a project only when the client passes `projectId` (the TUI
+    and `codex exec` never do), and saves a thread once its first turn runs. So: find the
+    project whose root is DIR (or create it), `thread/start` there with that project,
+    name the thread, and start its first turn with MESSAGE. The turn keeps running on the
+    server if we stop waiting."""
+    root_path = Path(directory or os.getcwd()).expanduser().resolve()
+    if not root_path.is_dir():
+        ui.error(f"{root_path} is not a directory")
+        return 1
+    root = str(root_path)
+    sock, profile = server_socket()
     with appserver.AppServer(sock, timeout=60) as server:
         projects = server.result("project/list", {}).get("data", [])
         project = next((p for p in projects if any(r.get("path") == root for r in p.get("roots", []))), None)
-        if not project:
+        created = project is None
+        if project is None:
+            key = "mycodex-" + hashlib.sha256(root.encode()).hexdigest()[:16]
             project = server.result("project/create", {
-                "name": Path(root).name, "roots": [{"path": root}],
-                "idempotencyKey": f"mycodex-{Path(root).name}"})["project"]
-            ui.success(f"created project {project['name']} ({project['id']})")
+                "name": project_name or root_path.name, "roots": [{"path": root}],
+                "idempotencyKey": key})["project"]
         thread = server.result("thread/start", {"cwd": root, "projectId": project["id"],
                                                 "serviceName": "mycodex"})["thread"]
-        server.result("thread/name/set", {"threadId": thread["id"], "name": name or Path(root).name})
+        title = name or root_path.name
+        server.result("thread/name/set", {"threadId": thread["id"], "name": title})
         text = message or ("Workspace ready check. Reply with exactly the word: ready. "
                            "Do not run commands or modify files.")
         server.result("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": text}]})
-        box = ui.StatusBox("Mycodex Seed")
-        box.update("turn", f"waiting for the first turn on {thread['id']}")
-        done = server.wait_for("turn/completed", timeout=180)
-        box.clear()
-    turn = (done or {}).get("params", {}).get("turn", {})
+        status = "running on the server"
+        if wait:
+            box = ui.StatusBox("Mycodex Seed")
+            box.update("turn", f"waiting for the first turn on {thread['id']} (Ctrl-C stops waiting, not the turn)")
+            try:
+                done = server.wait_for("turn/completed", timeout=180)
+            except KeyboardInterrupt:
+                done = None
+            box.clear()
+            turn = (done or {}).get("params", {}).get("turn", {})
+            status = turn.get("status") or status
     ui.panel("Mycodex Seed", [
-        ("Project", f"{project['name']} ({project['id']})"),
+        ("Project", f"{project['name']} ({project['id']})" + (", created" if created else "")),
         ("Thread", thread["id"]),
+        ("Name", title),
         ("Provider tag", thread.get("modelProvider") or "-"),
-        ("Turn", turn.get("status", "no completion seen")),
+        ("First turn", status),
         ("Relay", profile or "-"),
+        ("Continue", f"on the phone (project {project['name']}) or `mycodex resume {thread['id']}`"),
     ])
-    return 0 if turn.get("status") == "completed" else 1
+    return 1 if status in ("failed", "interrupted") else 0
 
 
 def foreground(profile: str | None, mode: str | None) -> int:

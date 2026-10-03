@@ -38,8 +38,8 @@ def wants_proxy(codex_args: list[str]) -> bool:
     first = codex_args[0]
     if first in NO_MODEL_COMMANDS or first in INFO_FLAGS:
         return False
-    if first == "remote-control" and len(codex_args) > 1 and not codex_args[1].startswith("-"):
-        return False  # start / stop / pair manage Codex's own daemon
+    if first in ("remote-control", "app-server") and len(codex_args) > 1 and not codex_args[1].startswith("-"):
+        return False  # remote-control start|stop|pair, app-server proxy|daemon|generate-*: no model client
     return True
 
 

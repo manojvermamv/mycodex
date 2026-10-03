@@ -143,7 +143,9 @@ SUB_HELP = {
         ("pair [--no-wait]", "Create a short-lived manual pairing code for the ChatGPT app."),
         ("clients [--revoke ID]", "Paired devices for this host."),
         ("logs [-f] [-n N]", "Service logs (journald)."),
-        ("seed [DIR] [--name N] [--message T]", "Register DIR as a project and start a thread so the phone lists it."),
+        ("seed [DIR] [--name N] [--message T] [--project P] [--no-wait]",
+         "New thread in DIR's project (created if missing), first turn = T; the phone lists it."),
+        ("socket", "Print the server's control socket (for `mycodex app-server proxy --sock`)."),
     ]),
     "remote-control": ("Phone remote control for the selected profile.",
                        "mycodex [--profile NAME] remote-control [--rotating|--pinned] [--failover] [--cwd DIR] [--foreground]", [
@@ -348,8 +350,13 @@ def cmd_remote(args: list[str], g: Globals) -> int:
         p.add_argument("dir", nargs="?")
         p.add_argument("--name")
         p.add_argument("--message")
+        p.add_argument("--project")
+        p.add_argument("--no-wait", action="store_true")
         ns = p.parse(rest)
-        return remote_cmd.seed(ns.dir, ns.name, ns.message)
+        return remote_cmd.seed(ns.dir, ns.name, ns.message, ns.project, not ns.no_wait)
+    if sub == "socket":
+        p.parse(rest)
+        return remote_cmd.socket_path()
     ui.error(f"unknown remote command '{sub}'", ["mycodex help remote"])
     return 2
 

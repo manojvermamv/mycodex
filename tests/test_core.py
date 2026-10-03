@@ -169,8 +169,10 @@ class LaunchArgsTest(unittest.TestCase):
     def test_wants_proxy(self):
         for args in ([], ["exec", "hi"], ["resume", "--last"], ["-m", "x"], ["remote-control"], ["app-server"]):
             self.assertTrue(launch.wants_proxy(args), args)
-        for args in (["login"], ["logout"], ["mcp", "list"], ["--version"], ["remote-control", "stop"], ["apply", "x"]):
+        for args in (["login"], ["logout"], ["mcp", "list"], ["--version"], ["remote-control", "stop"], ["apply", "x"],
+                     ["app-server", "proxy", "--sock", "/tmp/s"], ["app-server", "daemon", "status"]):
             self.assertFalse(launch.wants_proxy(args), args)
+        self.assertTrue(launch.wants_proxy(["app-server", "--listen", "stdio://"]))
 
     def test_proxy_args_keep_builtin_provider(self):
         self.assertEqual(launch.proxy_args("http://127.0.0.1:9/backend-api/codex"),

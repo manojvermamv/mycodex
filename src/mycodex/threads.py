@@ -96,7 +96,7 @@ def _project_for(thread: dict[str, Any]) -> str | None:
 
 
 def adopt(thread_id: str, name: str | None, archive_original: bool) -> int:
-    from .remote_cmd import _server_socket
+    from .remote_cmd import server_socket
 
     thread = _find(thread_id)
     if (thread.get("model_provider") or OPENAI) == OPENAI:
@@ -106,7 +106,7 @@ def adopt(thread_id: str, name: str | None, archive_original: bool) -> int:
     if previous:
         ui.info(f"{thread['id']} was already adopted as {previous}; continue there (mycodex resume {previous})")
         return 0
-    sock, relay = _server_socket()
+    sock, relay = server_socket()
     title = name or _title(thread)
     project = _project_for(thread)
     box = ui.StatusBox("Mycodex Adopt")
