@@ -161,18 +161,66 @@ shell profile: `codex` and `mycodex` live there too.
 
 ## Daily use
 
-| Command | What it does |
-|---|---|
-| `mycodex` | Official Codex TUI on the active account, rotation on |
-| `mycodex --profile NAME` | Same, starting on NAME |
-| `mycodex resume --last` · `mycodex exec "…"` · `mycodex -m MODEL` | Any Codex command or flag, passed through unchanged |
-| `mycodex quota` | All accounts in one table |
-| `mycodex status` | Accounts, rotation, phone link, sessions and versions on one screen |
-| `mycodex remote status` | Mode, relay account, connection, paired phones and the rotation proxy |
-| `mycodex doctor` | Checks the whole stack and explains anything wrong |
-
-`NAME` can be the full profile name, an alias, the account email, or any unique prefix
+The commands you will use most, shown with two example accounts, `work` and `personal`. A
+profile can be named by its full name, an alias, the account email or any unique prefix
 (`work` for `work_example.com`).
+
+```bash
+# ── Start Codex ─────────────────────────────────────────────────────────────
+mycodex                                    # Codex TUI as the active account, rotation on
+mycodex --profile personal                 # start on another account
+mycodex resume --last                      # continue your latest thread, on any account
+mycodex resume <thread id>                 # continue a specific thread (ids: mycodex threads)
+mycodex exec "summarise the last 10 commits"   # one-shot run, no TUI (inside a git repo)
+mycodex -m <model>                         # any codex flag or command passes straight through
+mycodex --no-rotate                        # keep this session on one account (no proxy)
+mycodex --dry-run                          # show what would be launched, start nothing
+
+# ── Quota and rotation ──────────────────────────────────────────────────────
+mycodex quota                              # 5h / weekly quota left and reset times, every account
+mycodex quota --watch                      # same, refreshed every 60 s (Ctrl-C to quit)
+mycodex rotation status                    # order, disabled and paused accounts, who is ready
+mycodex rotation log -f                    # watch switches and pauses live (Ctrl-C to quit)
+mycodex rotation reset                     # clear pauses once a limit has really reset
+mycodex rotation order work personal       # which account is tried first
+mycodex rotation disable personal          # never switch to it (`rotation enable personal` undoes)
+
+# ── Phone (remote control) ──────────────────────────────────────────────────
+mycodex remote status                      # connected? paired phone? proxy and rotation pool
+mycodex remote logs -f                     # follow the service log (Ctrl-C to quit)
+mycodex remote restart                     # restart the phone link with the same settings
+mycodex --profile work remote-control      # (re)start it as work, rotating mode
+mycodex remote-control --pinned            # one account only, no rotation
+mycodex remote pair                        # pairing code for the ChatGPT app (new phone)
+mycodex remote clients                     # paired devices (add --revoke ID to remove one)
+mycodex remote stop                        # take the phone link offline
+
+# ── Projects and threads ────────────────────────────────────────────────────
+# new thread inside the project, visible on the phone:
+mycodex remote seed ~/my-project --name "First task" --message "Describe the first task here"
+mycodex threads                            # recent threads with their tag and folder
+mycodex threads adopt <ID>                 # copy a hidden (non-openai) thread so the phone shows it
+
+# ── Accounts (when needed) ──────────────────────────────────────────────────
+mycodex profile list                       # all accounts: plan, status, quota, rotation, phone role
+mycodex profile show work                  # one account: token expiry, quota windows, paths
+mycodex profile use personal               # change the default account
+mycodex profile add                        # log in another ChatGPT account (device code)
+mycodex profile reauth personal            # log in again when it shows "auth invalid"
+mycodex profile alias work_example.com phone   # then use --profile phone
+
+# ── Health ──────────────────────────────────────────────────────────────────
+mycodex status                             # one-screen overview of everything
+mycodex doctor                             # full check; `mycodex doctor --fix` repairs what is safe
+mycodex processes                          # every codex / mycodex process and its account
+mycodex --version                          # mycodex and codex versions
+mycodex help remote                        # options of any command
+
+# ── Update mycodex ──────────────────────────────────────────────────────────
+git -C ~/mycodex pull && ~/mycodex/install.sh && mycodex remote restart
+```
+
+Every command and option is listed in [Commands](#commands).
 
 ## Commands
 
