@@ -124,7 +124,7 @@ def profile_show(name: str, as_json: bool = False) -> int:
         "auth": claims, "quota": {"status": q.status, "plan": q.plan, "error": q.error,
                                   "windows": [w.__dict__ for w in q.windows], "reset_credits": q.reset_credits},
         "rotation": rotation_label(profile.name, cfg, blocked),
-        "blocked": blocked.get(profile.name),
+        "paused": blocked.get(profile.name),
         "order_position": order.index(profile.name) + 1 if profile.name in order else None,
         "remote": roles.get(profile.name), "daemon": {"pid": daemon.pid, "alive": daemon.alive,
                                                       "remote_control_setting": daemon.remote_control_setting},

@@ -826,7 +826,7 @@ class RotationProxy:
             state.block(profile.name, until, f"{verdict.kind}: {verdict.message}".strip(": "))
         except OSError:
             pass
-        self.log.write("blocked", profile=profile.name, kind=verdict.kind, status=status or None,
+        self.log.write("paused", profile=profile.name, kind=verdict.kind, status=status or None,
                        until=datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        reason=json.dumps(verdict.message[:120]))
         if verdict.kind in ("quota", "rate"):

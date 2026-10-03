@@ -200,7 +200,7 @@ GOOD_WORDS = ("ready", "ok", "yes", "active", "connected", "enabled", "running",
 BAD_WORDS = ("no active", "missing", "error", "invalid", "expired", "failed", "exhausted",
              "limited", "blocked", "dead", "stopped", "unauthorized", "revoked", "conflict")
 WARN_WORDS = ("warning", "degraded", "connecting", "unknown", "stale", "unavailable", "disabled",
-              "not running", "inactive", "free", "pending", "untested")
+              "not running", "inactive", "free", "pending", "untested", "paused")
 
 
 def value_style(label: str, value: str) -> Style:
