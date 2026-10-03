@@ -209,7 +209,10 @@ be signed in to the new account.
 **Control socket.** Status, pairing, client lists, seeding and thread adoption talk to the
 running server with JSON-RPC over WebSocket through the official relay
 `codex app-server proxy --sock <socket>`. mycodex finds the socket from the server process
-(`/proc/<pid>/fd` and `/proc/net/unix`).
+(`/proc/<pid>/fd` and `/proc/net/unix`); `mycodex remote socket` prints it for scripts.
+The foreground server does not publish the default socket of its `CODEX_HOME`, so the
+relay always needs `--sock`. `mycodex app-server proxy|daemon|generate-*` exec codex
+directly, without a rotation proxy.
 
 ## Threads
 
@@ -217,6 +220,14 @@ Codex records a thread's provider when the thread is created, in the rollout's
 `session_meta` and in SQLite, re-derives it from the rollout when it indexes the thread,
 and filters `thread/list` by the server's provider. Since everything mycodex runs uses
 `openai`, terminal sessions and phone threads are one list.
+
+Projects are separate from tags. A thread belongs to a project only when a client passes
+the project id (`thread/start` with `projectId`, or `thread/metadata/update`); Codex does
+not derive it from the working directory, and the TUI and `codex exec` never pass one.
+`mycodex remote seed DIR` therefore runs on the server: it reuses or creates the project
+whose root is DIR (the idempotency key is derived from the path), starts a thread with that
+project, names it and starts the first turn, which is what saves a thread. See
+[projects-and-threads.md](projects-and-threads.md).
 
 A thread created under another provider id (prodex used `prodex-openai-governed-http`)
 cannot be re-tagged safely: editing SQLite alone is undone by the next re-index. `mycodex

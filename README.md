@@ -30,6 +30,7 @@ front of the ChatGPT backend, and manages the remote-control service.
 - [Daily use](#daily-use)
 - [Commands](#commands)
 - [Remote control](#remote-control)
+- [Projects and new threads](#projects-and-new-threads)
 - [Rotation](#rotation)
 - [Accounts and shared threads](#accounts-and-shared-threads)
 - [Files and layout](#files-and-layout)
@@ -261,7 +262,9 @@ mycodex remote status [--json]       # mode, relay, connection, host, paired pho
 mycodex remote pair [--no-wait]      # short-lived pairing code for the ChatGPT app
 mycodex remote clients [--revoke ID] # paired devices
 mycodex remote logs [-f] [-n N]      # service logs
-mycodex remote seed [DIR]            # register DIR as a project and start a thread the phone can see
+mycodex remote seed [DIR] [--name N] [--message T] [--project P] [--no-wait]
+                                     # new thread inside DIR's project (created if missing)
+mycodex remote socket                # the server's control socket, for app-server proxy scripts
 mycodex remote restart
 mycodex remote stop                  # stop and disable the service (phone link offline)
 ```
@@ -322,10 +325,30 @@ mycodex --profile NAME remote-control
   exactly like your terminal sessions, so the phone and every terminal see the same threads.
 - **One server per host**: starting the service stops Codex-managed remote daemons and
   turns their remote-control setting off, so the phone always reaches the mycodex service.
-- **Projects**: if a project is missing on the phone, run `mycodex remote seed ~/your-project`.
+- **Projects**: see [Projects and new threads](#projects-and-new-threads).
 - **Failover**: in pinned mode, `--failover` switches the relay to the next ready account
   when the current one is exhausted or can no longer log in. Pair the phone with that
   account afterwards.
+
+## Projects and new threads
+
+The phone groups threads by project. Codex files a thread under a project only when the
+client asks for it, which the TUI and `codex exec` never do: a thread you start with
+`mycodex` inside a project folder shows on the phone, but outside the project. To start a
+new thread inside a project, go through the running server:
+
+```bash
+mycodex remote seed ~/MyProject --name "Login page" --message "Plan the login page first."
+```
+
+mycodex finds the project whose root is `~/MyProject` (or creates it), starts a thread
+there, names it and sends your message as the first turn, all through the server's
+app-server API. Continue on the phone or with `mycodex resume <thread id>`.
+
+Scripts can make the same calls over the official relay,
+`mycodex app-server proxy --sock "$(mycodex remote socket)"`. The protocol, the JSON-RPC
+sequence, filing an existing thread under a project and a ready-to-use Python script are
+in [docs/projects-and-threads.md](docs/projects-and-threads.md).
 
 ## Rotation
 
@@ -386,6 +409,7 @@ needs: `~/.local/bin/mycodex` and `~/.config/systemd/user/mycodex-remote.service
 | `socket parent must be owned by the user or root …` when running `codex remote-control` yourself | Your umask makes Codex's socket directory group-writable. Use `mycodex remote-control`, which runs with umask 0022. |
 | The phone shows the host but no project | `mycodex remote seed ~/your-project` |
 | A thread is missing on the phone | `mycodex threads`; if its tag is not `openai`, `mycodex threads adopt ID` |
+| A terminal thread is on the phone but not inside its project | Terminal threads have no project; start project threads with `mycodex remote seed`, or file one with `thread/metadata/update` ([guide](docs/projects-and-threads.md)) |
 | An account shows `auth invalid`, or logs mention `token_invalidated` | `mycodex profile reauth NAME`. Avoid running other long-lived Codex servers on the same account. |
 | An account stays `paused` after its limit reset | `mycodex rotation reset NAME` |
 | `another remote-control server is running` | Stop it, or rerun with `--force`. |
@@ -420,6 +444,7 @@ needs: `~/.local/bin/mycodex` and `~/.config/systemd/user/mycodex-remote.service
 ## Documentation
 
 - [QUICKSTART.md](QUICKSTART.md): from install to a paired phone, step by step
+- [docs/projects-and-threads.md](docs/projects-and-threads.md): new project threads, with one command or through the app-server proxy
 - [docs/architecture.md](docs/architecture.md): accounts, the rotation proxy, the remote service and why each piece exists
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): how Codex was inspected and the decisions that followed
 

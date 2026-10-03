@@ -130,11 +130,15 @@ pick this host. If it does not appear, create a pairing code and enter it in the
 mycodex remote pair
 ```
 
-If your project is missing on the phone:
+To start a new thread inside a project (the project is created if it does not exist yet):
 
 ```bash
-mycodex remote seed ~/your-project
+mycodex remote seed ~/your-project --name "First task" --message "Describe the first task here"
 ```
+
+Threads you start in the terminal show on the phone too, but outside any project; see
+[docs/projects-and-threads.md](docs/projects-and-threads.md) for why, and for doing the
+same from a script through `mycodex app-server proxy`.
 
 Prefer one account with no rotation for the phone?
 
@@ -196,5 +200,6 @@ rm -rf ~/mycodex
 ## Next references
 
 - [README](README.md): features, commands and troubleshooting
+- [docs/projects-and-threads.md](docs/projects-and-threads.md): project threads, with one command or through the app-server proxy
 - [docs/architecture.md](docs/architecture.md): how accounts, the rotation proxy and the remote service work
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): the investigation behind the design
