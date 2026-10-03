@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""mycodex launcher: runs the package from the source tree next to this script."""
+import os
+import sys
+
+if sys.version_info < (3, 10):
+    sys.exit("Error: mycodex needs Python 3.10 or newer")
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
+from mycodex.cli import entry  # noqa: E402
+
+entry()

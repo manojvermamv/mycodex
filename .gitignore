@@ -1,0 +1,7 @@
+# host-specific runtime files (kept in this directory, never committed)
+config.json
+config.json.tmp
+config.lock
+state/
+systemd/
+__pycache__/
