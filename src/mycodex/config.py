@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import paths
+from . import paths, validation as check
 
 REMOTE_MODES = ("rotating", "pinned")
 
@@ -25,12 +25,14 @@ DEFAULTS: dict[str, Any] = {
         "enabled": True,          # global switch: off => launches run one account, no proxy
         "order": [],              # preferred order when the proxy has to pick an account
         "disabled": [],           # profiles the proxy never switches to
+        "min_quota_headroom": 5.0, # percent remaining on 5h window; 0 disables proactive routing
+        "auto_redeem": False,     # earned credits are preserved unless explicitly enabled
     },
     "remote": {
         "mode": "rotating",       # rotating: model turns go through the rotation proxy; pinned: one account
         "profile": None,          # relay account the phone pairs with
         "cwd": None,              # working directory for the service (default: home)
-        "failover": False,        # pinned mode: switch relay account when it is exhausted
+        "failover": True,         # auth invalidation in either mode; quota exhaustion only in pinned mode
         "failover_check_seconds": 300,
     },
     "aliases": {},
@@ -52,12 +54,36 @@ def load(path: Path = paths.CONFIG_FILE) -> dict[str, Any]:
         raw = json.loads(path.read_text())
     except FileNotFoundError:
         raw = {}
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"Error: {path} is not valid JSON ({exc}); fix or delete it")
+    except (ValueError, RecursionError):
+        raise SystemExit(f"Error: settings file {path} cannot be read. Correct its JSON format; your accounts were left unchanged.") from None
     if not isinstance(raw, dict):
         raise SystemExit(f"Error: {path} must contain a JSON object")
-    data = _merge(DEFAULTS, raw)
+    try:
+        data = _merge(DEFAULTS, raw)
+    except RecursionError:
+        raise SystemExit(f"Error: settings in {path} are nested too deeply. Simplify the file; no data was changed.") from None
     data["version"] = DEFAULTS["version"]
+    try:
+        check.text_value(data.get("active"), "active account", optional=True)
+        rotation = check.object_value(data.get("rotation"), "rotation settings")
+        check.boolean(rotation.get("enabled"), "rotation.enabled")
+        check.boolean(rotation.get("auto_redeem"), "rotation.auto_redeem")
+        check.number(rotation.get("min_quota_headroom"), "rotation.min_quota_headroom", maximum=100)
+        for key in ("order", "disabled"):
+            check.text_list(rotation.get(key), "rotation." + key)
+        remote = check.object_value(data.get("remote"), "phone settings")
+        if remote.get("mode") not in REMOTE_MODES:
+            raise check.InvalidData("remote.mode must be rotating (share accounts) or pinned (one account)")
+        for key in ("profile", "cwd"):
+            check.text_value(remote.get(key), "remote." + key, optional=True)
+        check.boolean(remote.get("failover"), "remote.failover")
+        check.number(remote.get("failover_check_seconds"), "remote.failover_check_seconds", minimum=1, integer=True)
+        aliases = check.object_value(data.get("aliases"), "account shortcuts")
+        for key, value in aliases.items():
+            check.text_value(key, "shortcut name")
+            check.text_value(value, "shortcut account")
+    except check.InvalidData as exc:
+        raise SystemExit(f"Error: {exc}. Correct {path}; your settings were left unchanged.") from None
     return data
 
 

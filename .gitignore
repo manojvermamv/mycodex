@@ -5,3 +5,7 @@ config.lock
 state/
 systemd/
 __pycache__/
+
+# personal account/host notes; public command examples live in docs/cheatsheet.md
+/CHEATSHEET.md
+/notes/

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import signal
@@ -39,9 +38,11 @@ def start(profile: str | None = None, mode: str | None = None, cwd: str | None =
     if not Path(workdir).is_dir():
         ui.error(f"working directory {workdir} does not exist")
         return 1
-    failover = cfg["remote"].get("failover", False) if failover is None else failover
+    if failover is None:
+        # A new start uses the CLI default; restart preserves the saved explicit choice.
+        failover = cfg["remote"].get("failover", True) if restart else True
 
-    box = ui.StatusBox("Mycodex Remote")
+    box = ui.StatusBox("Mycodex Phone Connection")
     box.update("preflight", f"checking {chosen}")
     q = quota.fetch(profiles.get(chosen, cfg))
     if q.status == "auth invalid":
@@ -161,7 +162,7 @@ def status(as_json: bool = False) -> int:
     fields = [
         ("Mode", f"{cfg.get('mode')}" + (" (model turns rotate across ready profiles)" if cfg.get("mode") == "rotating"
                                           else " (one account; no rotation)")),
-        ("Relay profile", cfg.get("profile") or "-"),
+        ("Phone account", cfg.get("profile") or "-"),
         ("Service", f"{service_state} ({info.get('SubState', '-')}), enabled={info.get('UnitFileState', '-')}, "
                     f"restarts={info.get('NRestarts', '0')}"),
     ]
@@ -200,14 +201,14 @@ def status(as_json: bool = False) -> int:
         fields.append(("Rotation pool", ", ".join(ready) or "no ready account — turns fail until a reset"))
     fields += [
         ("Working dir", cfg.get("cwd") or str(paths.HOME)),
-        ("Failover", "on" if cfg.get("failover") else "off"),
+        ("Switch phone account if unhealthy", "on" if cfg.get("failover") else "off"),
         ("Threads shown", "openai-tagged threads: the same list as every terminal session"),
     ]
     others = [s for s in data["servers"] if s["kind"] != "service"]
     for other in others:
         st = (other.get("status") or {}).get("status", other.get("error", "?"))
         fields.append(("Conflict", f"{other['kind']} pid {other['pid']} ({other['profile']}), {st}"))
-    ui.panel("Mycodex Remote", fields)
+    ui.panel("Mycodex Phone Connection", fields)
     return 0
 
 
@@ -273,7 +274,7 @@ def clients(revoke: str | None = None) -> int:
         data = server.result("remoteControl/client/list", {"environmentId": env}).get("data", [])
     rows = [[c.get("clientId", "-"), c.get("displayName", "-"), c.get("platform", "-"), c.get("appVersion", "-"),
              fmt.age(c.get("lastSeenAt"))] for c in data]
-    ui.table("Mycodex Remote Clients", [ui.Column("CLIENT ID"), ui.Column("NAME"), ui.Column("PLATFORM"),
+    ui.table("Mycodex Paired Devices", [ui.Column("DEVICE ID"), ui.Column("NAME"), ui.Column("PLATFORM"),
                                         ui.Column("APP"), ui.Column("LAST SEEN")], rows,
              subtitle=status_.get("serverName"))
     return 0
@@ -302,27 +303,23 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
     root = str(root_path)
     sock, profile = server_socket()
     with appserver.AppServer(sock, timeout=60) as server:
-        projects = server.result("project/list", {}).get("data", [])
-        project = next((p for p in projects if any(r.get("path") == root for r in p.get("roots", []))), None)
-        created = project is None
-        if project is None:
-            key = "mycodex-" + hashlib.sha256(root.encode()).hexdigest()[:16]
-            project = server.result("project/create", {
-                "name": project_name or root_path.name, "roots": [{"path": root}],
-                "idempotencyKey": key})["project"]
+        from . import projects
+        project, created = projects.ensure(server, root_path, project_name)
         thread = server.result("thread/start", {"cwd": root, "projectId": project["id"],
                                                 "serviceName": "mycodex"})["thread"]
         title = name or root_path.name
         server.result("thread/name/set", {"threadId": thread["id"], "name": title})
-        text = message or ("Workspace ready check. Reply with exactly the word: ready. "
-                           "Do not run commands or modify files.")
-        server.result("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": text}]})
+        text = message or projects.READY_MESSAGE
+        started = server.result("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": text}]})
+        turn_id = started["turn"]["id"]
         status = "running on the server"
         if wait:
             box = ui.StatusBox("Mycodex Seed")
             box.update("turn", f"waiting for the first turn on {thread['id']} (Ctrl-C stops waiting, not the turn)")
             try:
-                done = server.wait_for("turn/completed", timeout=180)
+                done = server.wait_for("turn/completed", timeout=180,
+                                       predicate=lambda note: note.get("params", {}).get("threadId") == thread["id"]
+                                       and note.get("params", {}).get("turn", {}).get("id") == turn_id)
             except KeyboardInterrupt:
                 done = None
             box.clear()
@@ -334,7 +331,7 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
         ("Name", title),
         ("Provider tag", thread.get("modelProvider") or "-"),
         ("First turn", status),
-        ("Relay", profile or "-"),
+        ("Phone account", profile or "-"),
         ("Continue", f"on the phone (project {project['name']}) or `mycodex resume {thread['id']}`"),
     ])
     return 1 if status in ("failed", "interrupted") else 0

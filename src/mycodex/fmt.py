@@ -25,7 +25,7 @@ def windows(q: Quota | None) -> str:
     if q is None:
         return "-"
     if not q.ok:
-        return q.status
+        return status_label(q.status)
     return " | ".join(f"{w.name} {w.remaining:.0f}%" for w in q.windows) or "-"
 
 
@@ -44,3 +44,9 @@ def age(epoch: float | None) -> str:
 
 def status_style(text: str) -> ui.Style:
     return ui.value_style("Status", text)
+
+
+def status_label(status: str) -> str:
+    """Explain technical status codes without changing structured output."""
+    return {"auth invalid": "sign in again", "limited": "limit reached",
+            "unavailable": "usage unavailable", "unknown": "not confirmed"}.get(status, status)

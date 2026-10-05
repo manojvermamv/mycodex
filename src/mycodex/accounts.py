@@ -77,7 +77,7 @@ def profile_list(as_json: bool = False, with_quota: bool = True) -> int:
         hints = [("Profiles", "none"), ("Next", "mycodex profile add")]
         if paths.PRODEX_PROFILES.is_dir():
             hints.append(("prodex accounts", "found in ~/.prodex/profiles: import them with `mycodex migrate`"))
-        ui.panel("Mycodex Profiles", hints)
+        ui.panel("Mycodex Accounts", hints)
         return 0
     rows = []
     for p in all_profiles:
@@ -86,13 +86,13 @@ def profile_list(as_json: bool = False, with_quota: bool = True) -> int:
         rows.append([
             ("* " if p.active else "  ") + p.name,
             plan,
-            (q.status if q else ("logged in" if p.logged_in else "no login")),
+            (fmt.status_label(q.status) if q else ("logged in" if p.logged_in else "no login")),
             fmt.windows(q) if q else "-",
             rotation_label(p.name, cfg, blocked),
             roles.get(p.name, "-"),
         ])
-    columns = [ui.Column("PROFILE"), ui.Column("PLAN"), ui.Column("STATUS"), ui.Column("QUOTA LEFT"),
-               ui.Column("ROTATION"), ui.Column("REMOTE")]
+    columns = [ui.Column("ACCOUNT"), ui.Column("PLAN"), ui.Column("STATUS"), ui.Column("USAGE LEFT"),
+               ui.Column("SWITCHING"), ui.Column("PHONE ROLE")]
 
     def style(i: int, row: list[str]) -> ui.Style:
         if i == 0 and row[0].startswith("*"):
@@ -103,8 +103,8 @@ def profile_list(as_json: bool = False, with_quota: bool = True) -> int:
             return ui.Style(ui.CYAN)
         return ui.PRIMARY
 
-    ui.table("Mycodex Profiles", columns, rows, subtitle=f"{len(all_profiles)} profile(s)", cell_style=style,
-             notes=["* active profile (used when --profile is omitted)"])
+    ui.table("Mycodex Accounts", columns, rows, subtitle=f"{len(all_profiles)} account(s)", cell_style=style,
+             notes=["* usual account for new terminal sessions"])
     return 0
 
 
@@ -136,30 +136,30 @@ def profile_show(name: str, as_json: bool = False) -> int:
         return 0
     expires = claims.get("access_expires")
     fields = [
-        ("Profile", profile.name + ("  (active)" if profile.active else "")),
+        ("Account", profile.name + ("  (active)" if profile.active else "")),
         ("Identity", claims.get("email") or "-"),
         ("Plan", f"{claims.get('plan') or q.plan or '-'}"
                  + (f" until {str(claims.get('subscription_until'))[:10]}" if claims.get("subscription_until") else "")),
-        ("Auth", "no login (mycodex profile reauth)" if not claims.get("present") else
+        ("Login", "no login (mycodex profile reauth)" if not claims.get("present") else
                  ("api key" if claims.get("api_key") and not claims.get("has_refresh_token") else "chatgpt")
                  + (f", token valid until {fmt.reset_time(expires)}" if expires else "")),
-        ("Status", q.status + (f" — {q.error}" if q.error else "")),
-        ("Quota left", fmt.windows(q)),
+        ("Status", fmt.status_label(q.status) + (f" — {q.error}" if q.error else "")),
+        ("Usage left", fmt.windows(q)),
         ("Resets", fmt.resets(q)),
         ("Reset credits", str(q.reset_credits) if q.reset_credits is not None else "-"),
-        ("Rotation", data["rotation"] + (f", order #{data['order_position']}" if data["order_position"] else "")
+        ("Account switching", data["rotation"] + (f", order #{data['order_position']}" if data["order_position"] else "")
                      + (f" ({blocked[profile.name][1]})" if profile.name in blocked else "")),
-        ("Remote", roles.get(profile.name, "-")),
+        ("Phone role", roles.get(profile.name, "-")),
         ("Codex daemon", ("running" if daemon.alive else "not running")
                          + (", remote control on" if daemon.remote_control_setting else "")),
         ("Shared state", "all linked to ~/.codex" if sharing.ok and not sharing.linked else
                          "; ".join(filter(None, [f"missing: {', '.join(sharing.linked)}" if sharing.linked else "",
                                                  f"private: {', '.join(sharing.private)}" if sharing.private else ""]))),
-        ("Aliases", ", ".join(data["aliases"]) or "-"),
+        ("Short names", ", ".join(data["aliases"]) or "-"),
         ("Last refresh", str(claims.get("last_refresh") or "-")[:19]),
-        ("Home", str(profile.home)),
+        ("Account folder", str(profile.home)),
     ]
-    ui.panel(f"Mycodex Profile {profile.name}", fields)
+    ui.panel(f"Mycodex Account {profile.name}", fields)
     return 0
 
 
@@ -175,7 +175,7 @@ def profile_use(name: str) -> int:
     with config.editing() as data:
         target = resolve.resolve(name, _names(data), data)
         data["active"] = target
-    ui.success(f"active profile is now {target}")
+    ui.success(f"New terminal sessions will use account {target}")
     return 0
 
 
@@ -210,7 +210,7 @@ def profile_add(name: str | None, browser: bool) -> int:
     try:
         code = _codex_login(pending, browser)
         who = profiles.identity(pending)
-        if code != 0 or not who.get("present"):
+        if code != 0 or not who.get("present") or who.get("corrupt"):
             ui.error("login did not finish; nothing was added")
             return code or 1
         for existing in profiles.all(cfg):
@@ -243,10 +243,10 @@ def profile_reauth(name: str, browser: bool) -> int:
     try:
         code = _codex_login(pending, browser)
         after = profiles.identity(pending)
-        if code != 0 or not after.get("present"):
+        if code != 0 or not after.get("present") or after.get("corrupt"):
             ui.error("login did not finish; the existing login was left unchanged")
             return code or 1
-        if before.get("present") and not _same_account(before, after):
+        if before.get("present") and not before.get("corrupt") and not _same_account(before, after):
             ui.error(f"you logged in as {after.get('email')}, but {profile.name} belongs to {before.get('email')}; "
                      "nothing changed", [f"mycodex profile add            # add {after.get('email')} as a new profile"])
             return 1
@@ -285,8 +285,8 @@ def profile_remove(name: str, assume_yes: bool, keep_home: bool, force: bool) ->
         ui.error(f"{profile.name} is in use by: " + ", ".join(f"{p.pid} {p.role}" for p in users),
                  ["close those sessions, or pass --force"])
         return 1
-    what = "and sign it out (its home is moved aside)" if keep_home else "sign it out and delete its home"
-    if not ui.confirm(f"Remove profile {profile.name}: {what}?", assume_yes=assume_yes):
+    what = "keep its folder and saved login under a hidden name (no sign-out)" if keep_home else "sign it out and delete its home"
+    if not ui.confirm(f"Remove account {profile.name}: {what}?", assume_yes=assume_yes):
         ui.info("nothing changed")
         return 1
     _stop_profile_daemon(profile)
@@ -352,7 +352,7 @@ def quota_table(name: str | None, as_json: bool) -> int:
     for p in all_profiles:
         q = quotas[p.name]
         usable = q.eligible and p.name not in cfg["rotation"]["disabled"] and p.name not in blocked
-        rows.append([("* " if p.name == active else "  ") + p.name, q.plan or "-", q.status, fmt.windows(q),
+        rows.append([("* " if p.name == active else "  ") + p.name, q.plan or "-", fmt.status_label(q.status), fmt.windows(q),
                      fmt.resets(q), "yes" if usable else "no"])
     ready = sum(1 for row in rows if row[5] == "yes")
 
@@ -366,8 +366,8 @@ def quota_table(name: str | None, as_json: bool) -> int:
     notes = [f"{n}: {q.error}" for n, q in quotas.items() if q.error]
     notes += [f"{n}: paused by the proxy until {fmt.reset_time(until)} ({why})" for n, (until, why) in blocked.items()
               if n in quotas]
-    ui.table("Mycodex Quota", [ui.Column("PROFILE"), ui.Column("PLAN"), ui.Column("STATUS"),
-                               ui.Column("LEFT"), ui.Column("RESETS"), ui.Column("ROTATION READY")],
+    ui.table("Mycodex Usage", [ui.Column("ACCOUNT"), ui.Column("PLAN"), ui.Column("STATUS"),
+                               ui.Column("LEFT"), ui.Column("RESETS"), ui.Column("CAN SWITCH TO")],
              rows, subtitle=f"{ready}/{len(rows)} ready", cell_style=style, notes=notes)
     return 0
 
@@ -399,16 +399,38 @@ def rotation_status(as_json: bool) -> int:
     quotas = quota.fetch_all([p for p in profiles.all(cfg) if p.name in order])
     ready = [n for n in order if quotas[n].eligible and n not in rot["disabled"] and n not in blocked]
     fields = [
-        ("Rotation", "enabled" if rot["enabled"] else "disabled (launches run one account, no proxy)"),
+        ("Account switching", "enabled" if rot["enabled"] else "disabled (launches run one account, no proxy)"),
+        ("Switch below", f"{rot.get('min_quota_headroom', 0):g}% (fresh turns only; recent quota required)"),
+        ("Spend resets automatically", "on" if rot.get("auto_redeem") else "off (earned reset credits preserved)"),
         ("Order", " > ".join(rot["order"]) if rot["order"] else "not set (most quota left first)"),
         ("Disabled", ", ".join(rot["disabled"]) or "none"),
         ("Ready now", ", ".join(ready) or "none"),
     ]
     for name, (until, reason) in sorted(blocked.items()):
         fields.append(("Paused", f"{name} until {fmt.reset_time(until)} — {reason}"))
-    fields.append(("How", "a session starts on its profile and moves to the next ready one when the backend "
-                          "reports a usage or rate limit, before any output reaches Codex"))
-    ui.panel("Mycodex Rotation", fields)
+    fields.append(("How", "new turns can move to an account with more usage left; a usage-limit error can also "
+                          "trigger a retry before any output is sent to Codex"))
+    ui.panel("Mycodex Account Switching", fields)
+    return 0
+
+
+def rotation_headroom(value: float | None) -> int:
+    if value is None:
+        ui.out(f"{config.load()['rotation']['min_quota_headroom']:g}%")
+        return 0
+    if not 0 <= value <= 100:
+        ui.error("headroom must be a percentage from 0 to 100")
+        return 2
+    with config.editing() as data:
+        data["rotation"]["min_quota_headroom"] = value
+    ui.success(f"fresh-turn low-quota threshold is {value:g}% (0 disables proactive routing)")
+    return 0
+
+
+def rotation_auto_redeem(enable: bool) -> int:
+    with config.editing() as data:
+        data["rotation"]["auto_redeem"] = enable
+    ui.success(f"automatic earned-reset redemption {'enabled' if enable else 'disabled'}")
     return 0
 
 

@@ -48,7 +48,7 @@ def proxy_args(base_url: str) -> list[str]:
 
 
 def run(profile: Profile, codex_args: list[str], rotate: bool, dry_run: bool = False) -> int:
-    profiles.prepare_home(profile.home)
+    profiles.prepare_home(profile.home, dry_run=dry_run)
     env = codex_env(profile, "session")
     use_proxy = rotate and wants_proxy(codex_args)
     binary = paths.codex_bin()

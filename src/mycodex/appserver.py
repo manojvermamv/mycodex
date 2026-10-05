@@ -17,7 +17,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import __version__, paths
 
@@ -34,12 +34,17 @@ class AppServer:
         self.proc: subprocess.Popen[bytes] | None = None
         self._queue: queue.Queue[bytes | None] = queue.Queue()
         self._buf = b""
+        self._stderr = b""
         self._next_id = 0
         self.notifications: list[dict[str, Any]] = []
 
     # -- lifecycle -------------------------------------------------------------------------
     def __enter__(self) -> "AppServer":
-        self.open()
+        try:
+            self.open()
+        except BaseException:
+            self.close()
+            raise
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -54,6 +59,7 @@ class AppServer:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=paths.tool_env(extra))
         threading.Thread(target=self._pump, daemon=True).start()
+        threading.Thread(target=self._pump_stderr, daemon=True).start()
         key = base64.b64encode(os.urandom(16)).decode()
         self._write(("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                      f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
@@ -64,6 +70,9 @@ class AppServer:
         status = head.split(b"\r\n")[0].decode(errors="replace")
         if " 101 " not in status:
             raise AppServerError(f"control socket refused the connection: {status}")
+        self._initialize()
+
+    def _initialize(self) -> None:
         init = self.call("initialize", {
             "clientInfo": {"name": "mycodex", "title": "mycodex", "version": __version__},
             "capabilities": {"experimentalApi": True},
@@ -81,17 +90,38 @@ class AppServer:
             self.proc.wait(timeout=5)
         except (OSError, subprocess.TimeoutExpired):
             self.proc.kill()
+            self.proc.wait(timeout=5)
+        for stream in (self.proc.stdin, self.proc.stdout, self.proc.stderr):
+            if stream:
+                stream.close()
         self.proc = None
 
     # -- io --------------------------------------------------------------------------------
     def _pump(self) -> None:
         assert self.proc and self.proc.stdout
-        while True:
-            chunk = self.proc.stdout.read1(65536)
-            if not chunk:
-                self._queue.put(None)
-                return
-            self._queue.put(chunk)
+        stream = self.proc.stdout
+        try:
+            while True:
+                chunk = stream.read1(65536)
+                if not chunk:
+                    break
+                self._queue.put(chunk)
+        except (OSError, ValueError):
+            pass
+        finally:
+            self._queue.put(None)
+
+    def _pump_stderr(self) -> None:
+        assert self.proc and self.proc.stderr
+        stream = self.proc.stderr
+        try:
+            while True:
+                chunk = stream.read1(4096)
+                if not chunk:
+                    return
+                self._stderr = (self._stderr + chunk)[-2000:]
+        except (OSError, ValueError):
+            pass
 
     def _fill(self, deadline: float) -> None:
         remaining = deadline - time.time()
@@ -102,12 +132,7 @@ class AppServer:
         except queue.Empty:
             raise AppServerError("timed out waiting for the app-server") from None
         if chunk is None:
-            err = b""
-            if self.proc and self.proc.stderr:
-                try:
-                    err = self.proc.stderr.read(2000) or b""
-                except OSError:
-                    pass
+            err = self._stderr
             raise AppServerError("control socket closed" + (f": {err.decode(errors='replace').strip()}" if err else ""))
         self._buf += chunk
 
@@ -151,7 +176,13 @@ class AppServer:
                 continue
             payload += data
             if fin:
-                return json.loads(payload.decode())
+                try:
+                    message = json.loads(payload.decode())
+                except (ValueError, RecursionError):
+                    raise AppServerError("Could not read the phone server's reply. Try again.") from None
+                if not isinstance(message, dict):
+                    raise AppServerError("The phone server returned an unexpected reply format. Try again.")
+                return message
 
     # -- rpc -------------------------------------------------------------------------------
     def call(self, method: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> dict[str, Any]:
@@ -169,22 +200,26 @@ class AppServer:
         response = self.call(method, params, timeout)
         if "error" in response:
             error = response["error"]
-            raise AppServerError(f"{method}: {error.get('message', error)}")
+            message = error.get("message") if isinstance(error, dict) else None
+            raise AppServerError(f"{method}: {message or 'the server could not complete this request'}")
         return response.get("result")
 
-    def wait_for(self, method: str, timeout: float = 120) -> dict[str, Any] | None:
+    def wait_for(self, method: str, timeout: float = 120,
+                 predicate: Callable[[dict[str, Any]], bool] | None = None) -> dict[str, Any] | None:
         deadline = time.time() + timeout
-        for note in self.notifications:
-            if note.get("method") == method:
-                return note
+        def matches(note: dict[str, Any]) -> bool:
+            return note.get("method") == method and (predicate is None or predicate(note))
+        for index, note in enumerate(self.notifications):
+            if matches(note):
+                return self.notifications.pop(index)
         while time.time() < deadline:
             try:
                 message = self._receive(deadline)
             except AppServerError:
                 return None
-            self._handle_other(message)
-            if message.get("method") == method:
+            if matches(message):
                 return message
+            self._handle_other(message)
         return None
 
     def _handle_other(self, message: dict[str, Any]) -> None:
@@ -192,3 +227,33 @@ class AppServer:
             self.notifications.append(message)
             if "id" in message:  # server -> client request (approvals etc.): decline politely
                 self._send({"id": message["id"], "error": {"code": -32601, "message": "not supported by mycodex"}})
+
+
+class StdioAppServer(AppServer):
+    """An isolated foreground server using newline-delimited JSON, with no remote relay."""
+
+    def __init__(self, home: Path, timeout: float = 30):
+        super().__init__("", home=home, timeout=timeout)
+
+    def open(self) -> None:
+        env = paths.tool_env({"CODEX_HOME": str(self.home), "CODEX_SQLITE_HOME": str(self.home), "NO_COLOR": "1"})
+        self.proc = subprocess.Popen([paths.codex_bin(), "app-server", "--listen", "stdio://"],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        threading.Thread(target=self._pump, daemon=True).start()
+        threading.Thread(target=self._pump_stderr, daemon=True).start()
+        self._initialize()
+
+    def _send(self, message: dict[str, Any]) -> None:
+        self._write(json.dumps(message).encode() + b"\n")
+
+    def _receive(self, deadline: float) -> dict[str, Any]:
+        while b"\n" not in self._buf:
+            self._fill(deadline)
+        line, self._buf = self._buf.split(b"\n", 1)
+        try:
+            message = json.loads(line)
+        except (ValueError, RecursionError) as exc:
+            raise AppServerError("app-server returned invalid JSON") from exc
+        if not isinstance(message, dict):
+            raise AppServerError("app-server returned a non-object message")
+        return message

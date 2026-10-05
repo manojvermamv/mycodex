@@ -41,8 +41,8 @@ def processes(as_json: bool = False) -> int:
             return ui.Style(ui.CYAN)
         return ui.SECONDARY if i in (3, 4, 5) else ui.PRIMARY
 
-    ui.table("Mycodex Processes", [ui.Column("PID", align="right"), ui.Column("ROLE"), ui.Column("PROFILE"),
-                                   ui.Column("UP"), ui.Column("TTY"), ui.Column("DETAIL", max_width=60)],
+    ui.table("Mycodex Processes", [ui.Column("PID", align="right"), ui.Column("ROLE"), ui.Column("ACCOUNT"),
+                                   ui.Column("RUNNING FOR"), ui.Column("TERMINAL"), ui.Column("DETAIL", max_width=60)],
              rows, subtitle=f"{len(all_procs)} process(es)", cell_style=style)
     return 0
 
@@ -82,26 +82,26 @@ def status(as_json: bool = False, with_quota: bool = True) -> int:
     others = [f"{s['kind']} {s['pid']} [{s['profile']}] {(s.get('status') or {}).get('status', '?')}, "
               f"clients {len(s.get('clients') or [])}" for s in remote_data["servers"] if s["kind"] != "service"]
     fields = [
-        ("Active profile", data["active_profile"] or "none"),
-        ("Profiles", f"{len(all_profiles)} total; ready {len(ready)}"
+        ("Usual account", data["active_profile"] or "none"),
+        ("Accounts", f"{len(all_profiles)} total; ready {len(ready)}"
                      + (f"; limited {', '.join(limited)}" if limited else "")
-                     + (f"; auth invalid {', '.join(broken)}" if broken else "")),
+                     + (f"; sign in again {', '.join(broken)}" if broken else "")),
     ]
     for p in all_profiles:
         q = quotas.get(p.name)
         note = f" · paused until {fmt.reset_time(paused[p.name][0])}" if p.name in paused else ""
-        fields.append((f"  {p.name}", (f"{q.status} · {fmt.windows(q)}" if q else "-") + note))
+        fields.append((f"  {p.name}", (f"{fmt.status_label(q.status)} · {fmt.windows(q)}" if q else "-") + note))
     sessions = []
     for entry in live:
         health = entry.get("health") or {}
         sessions.append(f"{entry['pid']} {entry.get('role')} (owner {entry.get('owner')}, "
                         f"now {health.get('current', '?')}, {health.get('switches', 0)} switch(es))")
     fields += [
-        ("Rotation", ("enabled" if cfg["rotation"]["enabled"] else "disabled")
+        ("Account switching", ("enabled" if cfg["rotation"]["enabled"] else "disabled")
                      + (f"; order {' > '.join(cfg['rotation']['order'])}" if cfg["rotation"]["order"] else "")
                      + (f"; disabled {', '.join(cfg['rotation']['disabled'])}" if cfg["rotation"]["disabled"] else "")),
-        ("Rotation proxies", "; ".join(sessions) or "none running"),
-        ("Remote", f"mycodex service {remote_state}; mode {cfg['remote'].get('mode')}; "
+        ("Switching sessions", "; ".join(sessions) or "none running"),
+        ("Phone connection", f"mycodex service {remote_state}; mode {cfg['remote'].get('mode')}; "
                    f"relay {cfg['remote'].get('profile') or '-'}; connection {connection}; clients {clients}"),
         *([("Other remote", "; ".join(others))] if others else []),
         ("Terminal sessions", ", ".join(f"{p.pid} {_who(p.profile)}" for p in tuis) or "none"),

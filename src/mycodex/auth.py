@@ -5,7 +5,8 @@ file. mycodex refreshes only when an access token is about to expire or the back
 rejected it, under a per-profile lock, after re-reading the file (another process may
 have refreshed already). It writes atomically (temp file + rename, mode 0600) so Codex
 never reads half a file, and it uses Codex's own endpoint, client id and JSON body.
-Token values never leave this module except as request headers.
+Normal displays return only account facts. Callers use credentials for HTTP headers or
+the isolated official server's externally managed login.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import paths
+from . import paths, validation as check
 
 REFRESH_URL = "https://auth.openai.com/oauth/token"
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -46,13 +47,37 @@ class Credentials:
 
 
 def jwt_claims(token: str | None) -> dict[str, Any]:
+    if not isinstance(token, str):
+        return {}
     try:
         payload = (token or "").split(".")[1]
         payload += "=" * (-len(payload) % 4)
         data = json.loads(base64.urlsafe_b64decode(payload))
         return data if isinstance(data, dict) else {}
-    except (IndexError, ValueError):
+    except (IndexError, ValueError, RecursionError):
         return {}
+
+
+def _validate(data: Any) -> dict[str, Any]:
+    try:
+        data = check.object_value(data, "login file")
+        tokens = check.object_value(data.get("tokens"), "login tokens", optional=True)
+        for field in ("access_token", "refresh_token", "id_token", "account_id"):
+            value = check.text_value(tokens.get(field), "login " + field, optional=True)
+            if value is not None and any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+                raise check.InvalidData("login " + field + " must not contain spaces or control characters")
+        for field in ("auth_mode", "OPENAI_API_KEY", "last_refresh"):
+            check.text_value(data.get(field), "login " + field, optional=True)
+        for field in ("access_token", "id_token"):
+            claims = jwt_claims(tokens.get(field))
+            check.timestamp(claims.get("exp"), "login expiry")
+            check.text_value(claims.get("email"), "login email", optional=True)
+            details = check.object_value(claims.get("https://api.openai.com/auth"), "login account details", optional=True)
+            for key in ("chatgpt_plan_type", "chatgpt_subscription_active_until", "chatgpt_account_id", "chatgpt_user_id", "user_id"):
+                check.text_value(details.get(key), "login " + key, optional=True)
+    except check.InvalidData as exc:
+        raise AuthError(f"Login information is damaged: {exc}. Sign in again with mycodex profile reauth NAME.") from None
+    return data
 
 
 def read(home: Path, attempts: int = 6) -> dict[str, Any] | None:
@@ -60,12 +85,12 @@ def read(home: Path, attempts: int = 6) -> dict[str, Any] | None:
     for attempt in range(attempts):
         try:
             data = json.loads(path.read_text())
-            return data if isinstance(data, dict) else None
+            return _validate(data)
         except FileNotFoundError:
             return None
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (ValueError, RecursionError):
             if attempt == attempts - 1:
-                raise AuthError(f"{path} is not valid JSON")
+                raise AuthError(f"Login file {path} could not be read. Sign in again with mycodex profile reauth NAME.")
             time.sleep(0.05)  # Codex may be rewriting it
     return None
 
@@ -156,12 +181,20 @@ def refresh(home: Path, stale: str | None = None, timeout: float = 30) -> Creden
         if not refresh_token:
             raise AuthError("no refresh token; log in again", permanent=True)
         payload = _exchange(refresh_token, timeout)
+        try:
+            payload = check.object_value(payload, "sign-in refresh response")
+            check.text_value(payload.get("access_token"), "new access token")
+            for key in ("refresh_token", "id_token"):
+                check.text_value(payload.get(key), "new " + key, optional=True)
+        except check.InvalidData as exc:
+            raise AuthError(f"Could not renew the login: {exc}. The saved login was left unchanged.") from None
         for key in ("id_token", "access_token", "refresh_token"):
             if payload.get(key):
                 tokens[key] = payload[key]
         updated = dict(data)
         updated["tokens"] = tokens
         updated["last_refresh"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        _validate(updated)
         write(home, updated)
         expires = jwt_claims(tokens.get("access_token")).get("exp")
         return Credentials(tokens["access_token"], tokens.get("account_id"), int(expires) if expires else None)
@@ -185,21 +218,23 @@ def _exchange(refresh_token: str, timeout: float) -> dict[str, Any]:
                         permanent=permanent) from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise AuthError(f"token refresh failed: {exc}") from None
-    except json.JSONDecodeError:
-        raise AuthError("token refresh returned invalid JSON") from None
+    except (ValueError, RecursionError):
+        raise AuthError("Could not renew the login: the reply was unreadable. Try again later.") from None
 
 
 def _error_code(raw: bytes) -> str | None:
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, RecursionError):
         return None
     if not isinstance(data, dict):
         return None
     error = data.get("error")
     if isinstance(error, dict):
-        return error.get("code") or error.get("type")
-    return error if isinstance(error, str) else data.get("code")
+        code = error.get("code") or error.get("type")
+    else:
+        code = error if isinstance(error, str) else data.get("code")
+    return code if isinstance(code, str) else None
 
 
 def write(home: Path, data: dict[str, Any]) -> None:

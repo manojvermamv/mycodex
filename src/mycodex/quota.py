@@ -19,7 +19,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from . import __version__, auth, state
+from . import __version__, auth, state, validation as check
 from .profiles import Profile
 
 USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
@@ -50,6 +50,7 @@ class Quota:
     reset_credits: int | None = None
     error: str | None = None
     fetched_at: float = field(default_factory=time.time)
+    usage_allowed: bool | None = None  # explicit permission, retained in the cache
 
     @property
     def eligible(self) -> bool:
@@ -72,29 +73,39 @@ class Quota:
         return " | ".join(f"{w.name} {w.remaining:.0f}%" for w in self.windows) or "no windows"
 
 
+def _window(raw: Any, field: str, duration: str, used: str, reset: str,
+            multiplier: int = 1) -> Window:
+    raw = check.object_value(raw, field)
+    seconds = check.number(raw.get(duration), field + "." + duration, minimum=1, integer=True) * multiplier
+    percent = check.number(raw.get(used), field + "." + used)
+    reset_at = check.timestamp(raw.get(reset), field + "." + reset)
+    return Window(WINDOW_NAMES.get(seconds, f"{seconds // 3600}h"), seconds, percent, reset_at)
+
+
+def _facts(profile: str, payload: dict[str, Any], windows: list[Window], permission: bool | None,
+           limited: bool, plan: str, account: str, credits: int | None) -> Quota:
+    known = limited or permission is True
+    return Quota(profile, known, "limited" if limited else ("ready" if permission is True else "unknown"),
+                 plan=check.text_value(payload.get(plan), plan, optional=True),
+                 account_id=check.text_value(payload.get(account), account, optional=True),
+                 windows=sorted(windows, key=lambda w: w.seconds), reset_credits=credits,
+                 error=None if known else "Usage permission was not provided. Try checking again later.",
+                 usage_allowed=permission)
+
+
 def parse(profile: str, payload: dict[str, Any]) -> Quota:
-    rate = payload.get("rate_limit") or {}
-    windows = []
-    for key in ("primary_window", "secondary_window"):
-        window = rate.get(key)
-        if not window:
-            continue
-        seconds = int(window.get("limit_window_seconds") or 0)
-        windows.append(Window(
-            name=WINDOW_NAMES.get(seconds, f"{seconds // 3600}h" if seconds else "window"),
-            seconds=seconds,
-            used_percent=float(window.get("used_percent") or 0),
-            reset_at=window.get("reset_at"),
-        ))
-    windows.sort(key=lambda w: w.seconds)
-    limited = bool(rate.get("limit_reached")) or rate.get("allowed") is False \
-        or any(w.remaining <= 0 for w in windows)
-    credits = (payload.get("rate_limit_reset_credits") or {}).get("available_count")
-    return Quota(
-        profile=profile, ok=True, status="limited" if limited else "ready",
-        plan=payload.get("plan_type"), email=payload.get("email"),
-        account_id=payload.get("account_id"), windows=windows, reset_credits=credits,
-    )
+    payload = check.object_value(payload, "usage response")
+    rate = check.object_value(payload.get("rate_limit"), "rate_limit", optional=True)
+    permission = check.boolean(rate.get("allowed"), "rate_limit.allowed", optional=True)
+    reached = check.boolean(rate.get("limit_reached"), "rate_limit.limit_reached", optional=True)
+    windows = [_window(rate[key], key, "limit_window_seconds", "used_percent", "reset_at")
+               for key in ("primary_window", "secondary_window") if rate.get(key) is not None]
+    reset = check.object_value(payload.get("rate_limit_reset_credits"), "reset credits", optional=True)
+    credits = check.number(reset.get("available_count"), "available_count", integer=True, optional=True)
+    limited = permission is False or reached is True or any(w.remaining <= 0 for w in windows)
+    q = _facts(profile, payload, windows, permission, limited, "plan_type", "account_id", credits)
+    q.email = check.text_value(payload.get("email"), "email", optional=True)
+    return q
 
 
 def to_dict(q: Quota) -> dict[str, Any]:
@@ -102,9 +113,51 @@ def to_dict(q: Quota) -> dict[str, Any]:
 
 
 def from_dict(data: dict[str, Any]) -> Quota:
-    windows = [Window(**w) for w in data.get("windows") or []]
+    data = check.object_value(data, "saved usage")
+    rows = data.get("windows", [])
+    if not isinstance(rows, list):
+        raise check.InvalidData("saved usage windows must be a list")
+    windows = []
+    for raw in rows:
+        window = _window(raw, "saved window", "seconds", "used_percent", "reset_at")
+        window.name = check.text_value(raw.get("name"), "window name")
+        windows.append(window)
     fields = {k: v for k, v in data.items() if k in Quota.__dataclass_fields__ and k != "windows"}
+    check.text_value(fields.get("profile"), "saved usage account")
+    check.boolean(fields.get("ok"), "saved usage permission")
+    if fields.get("status") not in ("ready", "limited", "auth invalid", "unavailable", "unknown"):
+        raise check.InvalidData("saved usage status is not recognized")
+    for name in ("plan", "email", "account_id", "error"):
+        check.text_value(fields.get(name), "saved usage " + name, optional=True)
+    check.number(fields.get("reset_credits"), "saved reset credits", integer=True, optional=True)
+    if "fetched_at" in fields:
+        check.number(fields["fetched_at"], "saved usage time", maximum=253402214400)
+    permission = check.boolean(fields.get("usage_allowed"), "saved usage permission", optional=True)
+    if fields["status"] == "ready" and permission is not True:
+        fields.update(ok=False, status="unknown", error="Saved usage has no confirmed permission. Check usage again.")
+    if fields["status"] == "ready" and any(w.remaining <= 0 for w in windows):
+        fields.update(status="limited")
     return Quota(windows=windows, **fields)
+
+
+def from_rpc(profile: str, payload: dict[str, Any]) -> Quota:
+    """Translate an account snapshot; missing permission never proves recovery."""
+    payload = check.object_value(payload, "account usage response")
+    by_id = check.object_value(payload.get("rateLimitsByLimitId"), "rateLimitsByLimitId", optional=True)
+    rate = by_id.get("codex")
+    if rate is None:
+        rate = payload.get("rateLimits")
+    rate = check.object_value(rate, "rateLimits", optional=True)
+    permission = check.boolean(payload.get("ordinaryUsageAllowed"), "ordinaryUsageAllowed", optional=True)
+    spend = check.boolean(rate.get("spendControlReached"), "spendControlReached", optional=True)
+    reached = check.text_value(rate.get("rateLimitReachedType"), "rateLimitReachedType", optional=True)
+    windows = [_window(rate[key], key, "windowDurationMins", "usedPercent", "resetsAt", multiplier=60)
+               for key in ("primary", "secondary") if rate.get(key) is not None]
+    reset = check.object_value(payload.get("rateLimitResetCredits"), "reset credits", optional=True)
+    credits = check.number(reset.get("availableCount"), "availableCount", integer=True, optional=True)
+    limited = permission is False or bool(reached) or spend is True or any(w.remaining <= 0 for w in windows)
+    combined = {**payload, "planType": rate.get("planType")}
+    return _facts(profile, combined, windows, permission, limited, "planType", "accountId", credits)
 
 
 @functools.lru_cache(maxsize=1)
@@ -142,17 +195,18 @@ def fetch(profile: Profile, timeout: float = 20) -> Quota:
     except auth.AuthError as exc:
         return _remember(Quota(name, False, "auth invalid" if exc.permanent else "unknown", error=str(exc)))
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return Quota(name, False, "unknown", error=f"quota request failed: {getattr(exc, 'reason', exc)}")
+        return _remember(Quota(name, False, "unknown", error="Could not check usage. Check your connection and try again."))
     if status == 200:
         try:
             return _remember(parse(name, json.loads(body)))
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            return Quota(name, False, "unknown", error=f"unparseable quota response: {exc}")
+        except (TypeError, ValueError, RecursionError) as exc:
+            detail = str(exc) if isinstance(exc, check.InvalidData) else "the response was not valid JSON"
+            return _remember(Quota(name, False, "unknown", error=f"Could not read usage: {detail}. Try again later."))
     if status == 401:
         return _remember(Quota(name, False, "auth invalid", error="the backend rejected a fresh token (HTTP 401)"))
     if status in (402, 403):
-        return _remember(Quota(name, False, "unavailable", error=f"HTTP {status}: {body[:160].decode(errors='replace')}"))
-    return Quota(name, False, "unknown", error=f"HTTP {status}")
+        return _remember(Quota(name, False, "unavailable", error=f"Usage is unavailable for this account (HTTP {status})."))
+    return _remember(Quota(name, False, "unknown", error=f"Could not check usage (HTTP {status}). Try again later."))
 
 
 def _remember(q: Quota) -> Quota:
@@ -176,5 +230,5 @@ def cached(name: str, max_age: float = 900) -> Quota | None:
         return None
     try:
         return from_dict(snapshot)
-    except TypeError:
+    except (TypeError, ValueError):
         return None

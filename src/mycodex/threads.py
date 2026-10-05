@@ -133,3 +133,30 @@ def adopt(thread_id: str, name: str | None, archive_original: bool) -> int:
         ("Continue", f"mycodex resume {copy['id']}   (or pick it on the phone)"),
     ])
     return 0
+
+
+def link(thread_id: str, project: str | None = None) -> int:
+    from . import projects
+
+    thread = _find(thread_id)
+    if thread.get("archived"):
+        ui.error("the thread is archived; unarchive it in Codex before linking it")
+        return 1
+    if (thread.get("model_provider") or OPENAI) != OPENAI:
+        ui.error("this thread uses another provider; adopt it first for phone visibility")
+        return 1
+    with projects.connection() as server:
+        target = projects.resolve(projects.pages(server, "project/list"), project,
+                                  cwd=thread.get("cwd"), project_id=thread.get("project_id") if not project else None)
+        server.result("thread/metadata/update", {"threadId": thread["id"], "projectId": target["id"]})
+        try:
+            hydrated = server.result("thread/resume", {"threadId": thread["id"], "excludeTurns": True})["thread"]
+        except appserver.AppServerError as exc:
+            ui.error(f"project assignment saved, but hydration failed: {exc}",
+                     [f"retry: mycodex threads link {thread['id']} --project {target['id']}"])
+            return 1
+        if hydrated.get("id") != thread["id"] or hydrated.get("projectId") != target["id"] \
+                or (hydrated.get("status") or {}).get("type") not in ("idle", "active"):
+            raise appserver.AppServerError("project assignment was saved, but thread/resume did not confirm a loaded thread in that project")
+    ui.success(f"linked and hydrated {thread['id']} in {target['name']} ({target['id']})")
+    return 0

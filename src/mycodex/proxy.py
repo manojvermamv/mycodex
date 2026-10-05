@@ -50,7 +50,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import auth, config, paths, profiles, quota, state
+from . import auth, config, paths, profiles, quota, state, validation as check
 from .profiles import Profile
 
 UPSTREAM = "https://chatgpt.com"
@@ -434,7 +434,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         turn_state = self.headers.get("x-codex-turn-state")
         session = (self.headers.get("session-id") or self.headers.get("thread-id")
                    or self.headers.get("session_id") or self.headers.get("conversation_id"))
-        plan = proxy.plan(turn_state, session)
+        try:
+            plan = proxy.plan(turn_state, session,
+                              fresh_turn=self.command == "POST" and self.path.split("?")[0].endswith("/responses"))
+        except (state.StateError, SystemExit) as exc:
+            self._local(503, {"error": {"type": "mycodex_settings", "message": str(exc)}})
+            return
         if not plan:
             self._local(503, {"error": {"type": "mycodex_no_account",
                                         "message": "mycodex: no logged-in profile is available "
@@ -443,6 +448,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         failures: list[Failure] = []
         for profile in plan:
             outcome = self._attempt(profile, body, turn_state, session)
+            if isinstance(outcome, Failure) and outcome.verdict.kind == "quota" \
+                    and proxy.pool()[1]["rotation"].get("auto_redeem", False):
+                recovered = proxy.redeem(profile)
+                if recovered:
+                    outcome = self._attempt(profile, body, turn_state, session)
             if outcome is None:
                 proxy.log.write("request", profile=profile.name, path=self.path.split("?")[0],
                                 session=_short(session), ms=int((time.monotonic() - started) * 1000),
@@ -693,6 +703,7 @@ class RotationProxy:
         self.started = time.time()
         self.requests = 0
         self.switches = 0
+        self.reset_checks: dict[str, float] = {}
         self.log = ProxyLog(f"pid={os.getpid()} {role}", echo=echo)
         self.server = _Server(("127.0.0.1", 0), Handler)
         self.server.proxy = self
@@ -748,10 +759,15 @@ class RotationProxy:
         hit = table.get(key)
         return hit[0] if hit and time.time() - hit[1] < BINDING_TTL else None
 
-    def plan(self, turn_state: str | None, session: str | None) -> list[Profile]:
+    def plan(self, turn_state: str | None, session: str | None, fresh_turn: bool = True) -> list[Profile]:
         members, cfg = self.pool()
         blocked = state.blocks()
         usable = [p for p in members if p.name not in blocked]
+        threshold = cfg["rotation"].get("min_quota_headroom", 0)
+        if threshold and not turn_state and fresh_turn:
+            # Refresh stale snapshots at a fresh-turn boundary, never during a sticky turn.
+            stale = [p for p in usable if quota.cached(p.name, max_age=60) is None]
+            quota.fetch_all(stale, timeout=3)
         order = [n for n in cfg["rotation"]["order"] if n in {p.name for p in usable}]
 
         def rank(p: Profile) -> tuple[int, float, str]:
@@ -770,10 +786,48 @@ class RotationProxy:
             if name in by_name and by_name[name] not in result:
                 result.append(by_name[name])
         result += [p for p in sorted(usable, key=rank) if p not in result]
+        if not turn_state and threshold and fresh_turn and result:
+            def headroom(p: Profile) -> float | None:
+                cached = quota.cached(p.name, max_age=300)
+                if not cached or not cached.ok:
+                    return None
+                short = next((w for w in cached.windows if w.seconds == 18000), None)
+                if not short or (short.reset_at and short.reset_at <= time.time()):
+                    return None
+                return short.remaining
+            current_headroom = headroom(result[0])
+            if current_headroom == 0 and cfg["rotation"].get("auto_redeem") and self.redeem(result[0]):
+                current_headroom = headroom(result[0])
+            if current_headroom is not None and current_headroom < threshold:
+                healthy = []
+                for member in result[1:]:
+                    cached = quota.cached(member.name, max_age=300)
+                    short_remaining = headroom(member)
+                    if cached and cached.eligible and cached.remaining is not None and cached.remaining >= threshold \
+                            and (short_remaining is None or short_remaining >= threshold):
+                        healthy.append(member)
+                if healthy:
+                    result = healthy + [p for p in result if p not in healthy]
         if not result and members:
             # everything is blocked: ask the account that frees up first, so Codex gets a real answer
             result = sorted(members, key=lambda p: blocked.get(p.name, (0, ""))[0])[:1]
         return result
+
+    def redeem(self, profile: Profile) -> bool:
+        from . import redemption
+        now = time.monotonic()
+        with self.lock:
+            if now - self.reset_checks.get(profile.name, -float("inf")) < 30:
+                return False
+            self.reset_checks[profile.name] = now
+        try:
+            recovered = redemption.try_auto(profile)
+        except (auth.AuthError, OSError, RuntimeError, check.InvalidData) as exc:
+            self.log.write("reset-credit-error", profile=profile.name, error=type(exc).__name__)
+            return False
+        if recovered:
+            self.log.write("reset-credit-redeemed", profile=profile.name)
+        return recovered
 
     def turn_state_belongs(self, turn_state: str | None, name: str) -> bool:
         if not turn_state:
@@ -830,15 +884,13 @@ class RotationProxy:
                        until=datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        reason=json.dumps(verdict.message[:120]))
         if verdict.kind in ("quota", "rate"):
-            threading.Thread(target=self._learn_reset, args=(profile,), daemon=True).start()
+            threading.Thread(target=self._learn_reset, args=(profile, int(until)), daemon=True).start()
 
-    def _learn_reset(self, profile: Profile) -> None:
+    def _learn_reset(self, profile: Profile, expected_until: int) -> None:
         """Ask the usage endpoint when a just-blocked account frees up, and use that time."""
         q = quota.fetch(profile)
         if q.status == "limited" and q.usable_again_at and q.usable_again_at > time.time():
-            current = state.blocks(max_age=0).get(profile.name)
-            if not current or current[0] < q.usable_again_at:
-                state.block(profile.name, q.usable_again_at, current[1] if current else "quota: limited")
+            state.extend_pause(profile.name, expected_until, q.usable_again_at)
 
     def health(self) -> dict[str, Any]:
         with self.lock:

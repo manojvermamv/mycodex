@@ -7,14 +7,16 @@ started with the selected profile's CODEX_HOME and, when rotating, behind mycode
 from __future__ import annotations
 
 import argparse
+import math
 import sys
+import uuid
 from dataclasses import dataclass, field
 
-from . import __version__, accounts, codex, config, profiles, resolve, ui
+from . import __version__, accounts, codex, config, helptext, profiles, resolve, ui
 
 OWN_COMMANDS = {"profile", "profiles", "quota", "rotation", "remote", "remote-control", "status",
                 "processes", "ps", "doctor", "threads", "migrate", "help", "version", "login", "logout",
-                "__remote-serve"}
+                "__remote-serve", "projects", "use"}
 
 
 @dataclass
@@ -38,13 +40,15 @@ def parse_globals(argv: list[str]) -> Globals:
             g.passthrough_only = True
             return g
         if arg in ("--profile", "-P"):
-            if i + 1 >= len(argv):
-                raise SystemExit("Error: --profile needs a value")
+            if i + 1 >= len(argv) or not argv[i + 1].strip() or argv[i + 1].startswith("-"):
+                raise SystemExit("Choose an account after --profile, for example: mycodex --profile work quota")
             g.profile = argv[i + 1]
             i += 2
             continue
         if arg.startswith("--profile="):
             g.profile = arg.split("=", 1)[1]
+            if not g.profile.strip():
+                raise SystemExit("Choose an account after --profile=, for example: --profile=work")
         elif arg == "--no-rotate":
             g.rotate = False
         elif arg == "--rotate":
@@ -63,119 +67,44 @@ def parse_globals(argv: list[str]) -> Globals:
 
 
 # ----------------------------------------------------------------------------- help
-TOP_COMMANDS = [
-    ("(none)", "Start the official Codex TUI with the active profile (rotation on)."),
-    ("<codex args>", "Any codex command or flag (exec, resume, fork, review, mcp, -m, -c ...) passes through."),
-    ("profile", "List, show, add, remove, re-authenticate and alias accounts."),
-    ("quota", "Quota and readiness for every profile in one table (--watch to keep it open)."),
-    ("rotation", "Show or change rotation: enable/disable, order, paused accounts, event log."),
-    ("remote-control", "Run persistent phone remote control for --profile (rotating or pinned)."),
-    ("remote", "Manage the remote-control service: start, stop, restart, status, pair, clients, logs, seed."),
-    ("threads", "The shared thread list; adopt threads that are hidden from the phone."),
-    ("status", "One-screen summary: accounts, rotation, remote control, sessions, versions."),
-    ("processes", "Every codex/mycodex process with its role and account."),
-    ("doctor", "Check codex, accounts, tokens, shared threads, sockets, remote service, stale state."),
-    ("migrate", "Take over accounts from prodex (~/.prodex/profiles) without logging in again."),
-    ("help", "Show help for a command."),
-]
-TOP_OPTIONS = [
-    ("--profile <NAME>", "Account to use (name, alias, email or unique prefix)."),
-    ("--no-rotate", "Keep that account fixed for this launch (no rotation proxy)."),
-    ("--rotate", "Allow rotation even if `mycodex rotation disable` turned it off."),
-    ("--dry-run", "Show what would be launched, without starting codex."),
-    ("--", "Pass everything after it to codex verbatim (e.g. `mycodex -- --help`)."),
-    ("-h, --help", "Print help."),
-    ("-V, --version", "Print mycodex and codex versions."),
-]
-
-
 def top_help() -> None:
-    ui.help_text(
-        "Multi-account Codex: the official codex TUI and remote control with persistent profiles, "
-        "shared ~/.codex threads and automatic account rotation.",
-        "mycodex [--profile <NAME>] [--no-rotate] [COMMAND | CODEX ARGS...]",
-        TOP_COMMANDS, TOP_OPTIONS,
-        tips=["Bare `mycodex` = `codex` as the active profile, with rotation across ready profiles.",
-              "Shared threads: every profile links sessions, history and SQLite state to ~/.codex.",
-              "Accounts live in ~/.codex/profiles/<name>, one CODEX_HOME per account.",
-              "Use `mycodex help <command>` for command options."],
-        examples=["mycodex", "mycodex --profile work", "mycodex resume --last",
-                  "mycodex exec \"review this repo\"", "mycodex profile list", "mycodex quota",
-                  "mycodex --profile work remote-control",
-                  "mycodex remote-control --pinned", "mycodex remote status", "mycodex doctor"])
-
-
-SUB_HELP = {
-    "profile": ("Manage accounts.", "mycodex profile <COMMAND>", [
-        ("list [--json] [--no-quota]", "All profiles with plan, status, quota, rotation and remote role."),
-        ("show <NAME> [--json]", "Details: identity, plan expiry, token, quota windows, rotation, sharing, paths."),
-        ("current", "The active profile (used when --profile is omitted)."),
-        ("use <NAME>", "Make NAME the active profile."),
-        ("add [NAME] [--browser]", "Log a new account in with `codex login` (device code by default)."),
-        ("reauth <NAME> [--browser]", "Log an existing profile in again (expired/revoked token)."),
-        ("remove <NAME> [--yes] [--keep-home] [--force]", "Stop its daemon, sign it out, delete (or keep) its home."),
-        ("alias <NAME> [ALIAS] [--remove]", "Short names usable anywhere a profile is expected."),
-    ]),
-    "rotation": ("Rotation policy.", "mycodex rotation <COMMAND>", [
-        ("status [--json]", "Global switch, order, disabled and paused profiles, who is ready now."),
-        ("enable [NAME...]", "Turn rotation on (globally, or re-enable listed profiles)."),
-        ("disable [NAME...]", "Turn rotation off (globally), or never switch to the listed profiles."),
-        ("order [NAME...] [--clear]", "Preferred order when the proxy has to pick an account."),
-        ("reset [NAME...]", "Clear pauses the proxy set after usage/rate limits (all if none named)."),
-        ("log [-n N] [-f]", "Rotation proxy events: switches, pauses, token refreshes."),
-    ]),
-    "threads": ("Shared threads.", "mycodex threads [list|adopt] ...", [
-        ("list [--all] [--json] [-n N]", "Recent threads with their provider tag (default command)."),
-        ("adopt <ID> [--name N] [--archive-original]",
-         "Fork a thread with another tag (e.g. prodex) into an openai-tagged copy the phone lists."),
-    ]),
-    "migrate": ("Take over prodex accounts.", "mycodex migrate [--dry-run] [--yes] [--no-compat-links]", [
-        ("--dry-run", "Show what would move."),
-        ("--yes", "Do not ask for confirmation."),
-        ("--no-compat-links", "Do not leave links at ~/.prodex/profiles/<name>."),
-    ]),
-    "remote": ("Persistent remote control (systemd user service `mycodex-remote`).", "mycodex remote <COMMAND>", [
-        ("start [--profile NAME] [--rotating|--pinned] [--failover|--no-failover] [--cwd DIR] [--force] [--no-wait]",
-         "Start or switch the service; stops conflicting codex daemons first."),
-        ("stop", "Stop and disable the service (phone link goes offline)."),
-        ("restart", "Restart with the current settings."),
-        ("status [--json]", "Mode, relay account, connection, host name, paired phones, conflicts."),
-        ("pair [--no-wait]", "Create a short-lived manual pairing code for the ChatGPT app."),
-        ("clients [--revoke ID]", "Paired devices for this host."),
-        ("logs [-f] [-n N]", "Service logs (journald)."),
-        ("seed [DIR] [--name N] [--message T] [--project P] [--no-wait]",
-         "New thread in DIR's project (created if missing), first turn = T; the phone lists it."),
-        ("socket", "Print the server's control socket (for `mycodex app-server proxy --sock`)."),
-    ]),
-    "remote-control": ("Phone remote control for the selected profile.",
-                       "mycodex [--profile NAME] remote-control [--rotating|--pinned] [--failover] [--cwd DIR] [--foreground]", [
-        ("--rotating", "Default. Phone pairs with NAME; model turns rotate across ready profiles."),
-        ("--pinned", "Everything runs as NAME, no rotation (official codex remote-control as that account)."),
-        ("--failover", "If the relay account dies/exhausts, restart as the next ready profile (pair the phone with it)."),
-        ("--cwd DIR", "Default working directory for new remote threads."),
-        ("--foreground", "Run in this terminal instead of the service (debugging)."),
-        ("--force", "Terminate other remote-control servers that would conflict."),
-    ]),
-    "quota": ("Quota for all profiles in one table.", "mycodex quota [NAME] [--all] [--json] [--watch [SECONDS]]", [
-        ("NAME", "Only this profile."), ("--all", "All profiles (default)."), ("--json", "Machine-readable."),
-        ("--watch [SECONDS]", "Refresh the table every SECONDS (default 60) until Ctrl-C."),
-    ]),
-    "status": ("Summary of the whole stack.", "mycodex status [--json] [--no-quota]", []),
-    "processes": ("Processes with role and account.", "mycodex processes [--json]", []),
-    "doctor": ("Diagnostics and safe repairs.", "mycodex doctor [--fix] [--yes] [--json]", []),
-}
+    helptext.show()
 
 
 def sub_help(name: str) -> None:
-    if name == "ps":
-        name = "processes"
-    if name == "profiles":
-        name = "profile"
-    if name not in SUB_HELP:
-        top_help()
-        return
-    desc, usage, commands = SUB_HELP[name]
-    ui.help_text(desc, usage, commands, [("-h, --help", "Print help.")])
+    if not helptext.show(name):
+        ui.error(f"No help found for '{name}'.", ["mycodex help"])
+        raise SystemExit(2)
+
+
+def positive_integer(value: str) -> int:
+    try:
+        result = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("enter a whole number greater than zero") from None
+    if result <= 0:
+        raise argparse.ArgumentTypeError("enter a whole number greater than zero")
+    return result
+
+
+def positive_seconds(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("enter a number of seconds greater than zero") from None
+    if not math.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError("enter a number of seconds greater than zero")
+    return result
+
+
+def percentage(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("enter a percentage from 0 to 100") from None
+    if not math.isfinite(result) or not 0 <= result <= 100:
+        raise argparse.ArgumentTypeError("enter a percentage from 0 to 100")
+    return result
 
 
 # ----------------------------------------------------------------------------- parsers
@@ -185,15 +114,18 @@ class Parser(argparse.ArgumentParser):
         self.command = command
         self.add_argument("-h", "--help", action="store_true")
 
-    def error(self, message: str) -> None:  # prodex-style error, exit 2
-        ui.error(message, [f"mycodex help {self.command.split()[0]}"])
+    def error(self, message: str) -> None:
+        message = message.replace("the following arguments are required:", "Please provide:")
+        message = message.replace("unrecognized arguments:", "These options were not recognized:")
+        ui.error(message, [f"mycodex help {self.command}"])
         raise SystemExit(2)
 
     def parse(self, args: list[str]) -> argparse.Namespace:
-        ns = self.parse_args(args)
-        if ns.help:
-            sub_help(self.command.split()[0])
+        options = args[:args.index("--")] if "--" in args else args
+        if any(arg in ("-h", "--help") for arg in options):
+            sub_help(self.command)
             raise SystemExit(0)
+        ns = self.parse_args(args)
         return ns
 
 
@@ -230,7 +162,7 @@ def cmd_profile(args: list[str], g: Globals) -> int:
         ns = p.parse(rest)
         target = ns.name or g.profile
         if not target:
-            p.error("which profile? (mycodex profile reauth <NAME>)")
+            p.error("Choose the account to sign in again: mycodex profile reauth NAME")
         return accounts.profile_reauth(target, ns.browser)
     if sub == "remove":
         p.add_argument("name")
@@ -250,19 +182,34 @@ def cmd_profile(args: list[str], g: Globals) -> int:
 
 
 def cmd_quota(args: list[str], g: Globals) -> int:
+    if args[:1] == ["redeem"]:
+        from . import redemption
+        p = Parser("quota redeem")
+        p.add_argument("name", nargs="?")
+        p.add_argument("--json", action="store_true")
+        p.add_argument("--idempotency-key")
+        p.add_argument("--credit-id")
+        ns = p.parse(args[1:])
+        return redemption.redeem(ns.name or g.profile, ns.json, ns.idempotency_key, ns.credit_id)
     p = Parser("quota")
     p.add_argument("name", nargs="?")
     p.add_argument("--all", action="store_true")
     p.add_argument("--json", action="store_true")
-    p.add_argument("--watch", "--live", nargs="?", type=float, const=60.0, default=None)
+    p.add_argument("--watch", "--live", nargs="?", type=positive_seconds, const=60.0, default=None)
     ns = p.parse(args)
-    return accounts.quota_cmd(None if ns.all else (ns.name or None), ns.json, ns.watch)
+    return accounts.quota_cmd(None if ns.all else (ns.name or g.profile), ns.json, ns.watch)
 
 
 def cmd_rotation(args: list[str], g: Globals) -> int:
     sub = args[0] if args and not args[0].startswith("-") else "status"
     rest = args[1:] if args and not args[0].startswith("-") else args
     p = Parser(f"rotation {sub}")
+    if sub == "headroom":
+        p.add_argument("percent", nargs="?", type=percentage)
+        return accounts.rotation_headroom(p.parse(rest).percent)
+    if sub == "auto-redeem":
+        p.add_argument("setting", choices=("on", "off"))
+        return accounts.rotation_auto_redeem(p.parse(rest).setting == "on")
     if sub == "status":
         p.add_argument("--json", action="store_true")
         return accounts.rotation_status(p.parse(rest).json)
@@ -278,7 +225,7 @@ def cmd_rotation(args: list[str], g: Globals) -> int:
         p.add_argument("names", nargs="*")
         return accounts.rotation_reset(p.parse(rest).names)
     if sub == "log":
-        p.add_argument("-n", "--lines", type=int, default=40)
+        p.add_argument("-n", "--lines", type=positive_integer, default=40)
         p.add_argument("-f", "--follow", action="store_true")
         ns = p.parse(rest)
         return accounts.rotation_log(ns.lines, ns.follow)
@@ -311,6 +258,8 @@ def cmd_remote_control(args: list[str], g: Globals) -> int:
     ns = p.parse(args)
     profile = ns.profile or g.profile
     if ns.foreground:
+        if ns.cwd is not None or ns.failover is not None or ns.force or ns.no_wait:
+            p.error("With --foreground, use only --profile, --rotating, or --pinned. Remove --foreground to use service options.")
         return remote_cmd.foreground(profile, ns.mode)
     return remote_cmd.start(profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait)
 
@@ -343,7 +292,7 @@ def cmd_remote(args: list[str], g: Globals) -> int:
         return remote_cmd.clients(p.parse(rest).revoke)
     if sub == "logs":
         p.add_argument("-f", "--follow", action="store_true")
-        p.add_argument("-n", "--lines", type=int, default=100)
+        p.add_argument("-n", "--lines", type=positive_integer, default=100)
         ns = p.parse(rest)
         return remote_cmd.logs(ns.follow, ns.lines)
     if sub == "seed":
@@ -372,7 +321,7 @@ def cmd_threads(args: list[str]) -> int:
     if sub == "list":
         p.add_argument("--all", action="store_true")
         p.add_argument("--json", action="store_true")
-        p.add_argument("-n", "--limit", type=int, default=40)
+        p.add_argument("-n", "--limit", type=positive_integer, default=40)
         ns = p.parse(rest)
         return threads.list_threads(ns.all, ns.json, ns.limit)
     if sub == "adopt":
@@ -381,18 +330,50 @@ def cmd_threads(args: list[str]) -> int:
         p.add_argument("--archive-original", action="store_true")
         ns = p.parse(rest)
         return threads.adopt(ns.thread, ns.name, ns.archive_original)
+    if sub == "link":
+        p.add_argument("thread")
+        p.add_argument("--project")
+        ns = p.parse(rest)
+        return threads.link(ns.thread, ns.project)
     ui.error(f"unknown threads command '{sub}'", ["mycodex help threads"])
     return 2
 
 
-def cmd_migrate(args: list[str]) -> int:
+def cmd_projects(args: list[str], dry_run: bool = False) -> int:
+    from . import projects
+    sub = args[0] if args and not args[0].startswith("-") else "list"
+    rest = args[1:] if args and not args[0].startswith("-") else args
+    if sub in ("help", "-h", "--help"):
+        sub_help("projects")
+        return 0
+    p = Parser(f"projects {sub}")
+    if sub == "list":
+        p.add_argument("--json", action="store_true")
+        return projects.list_projects(p.parse(rest).json)
+    if sub == "add":
+        p.add_argument("directory")
+        p.add_argument("--name")
+        p.add_argument("--json", action="store_true")
+        ns = p.parse(rest)
+        return projects.add(ns.directory, ns.name, ns.json)
+    if sub == "clean":
+        p.add_argument("project")
+        p.add_argument("--dry-run", action="store_true")
+        p.add_argument("-y", "--yes", action="store_true")
+        ns = p.parse(rest)
+        return projects.clean(ns.project, ns.dry_run or dry_run, ns.yes)
+    ui.error(f"unknown projects command '{sub}'", ["mycodex help projects"])
+    return 2
+
+
+def cmd_migrate(args: list[str], dry_run: bool = False) -> int:
     from . import migrate
     p = Parser("migrate")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("-y", "--yes", action="store_true")
     p.add_argument("--no-compat-links", action="store_true")
     ns = p.parse(args)
-    return migrate.run(ns.dry_run, ns.yes, not ns.no_compat_links)
+    return migrate.run(ns.dry_run or dry_run, ns.yes, not ns.no_compat_links)
 
 
 def cmd_simple(name: str, args: list[str]) -> int:
@@ -407,8 +388,22 @@ def cmd_simple(name: str, args: list[str]) -> int:
         return views.processes(p.parse(args).json)
     if name == "doctor":
         p.add_argument("--fix", action="store_true")
+        p.add_argument("--fix-rollout-paths", action="store_true")
         p.add_argument("-y", "--yes", action="store_true")
         ns = p.parse(args)
+        if ns.fix_rollout_paths:
+            from . import maintenance
+            import json
+            results = maintenance.audit(fix=True)
+            if ns.json:
+                print(json.dumps(results, indent=2))
+            else:
+                for item in results:
+                    ui.info(f"{item['database']}: repaired {item['repaired']}/{item['legacy']} legacy paths"
+                            + (f"; backup {item['backup']}" if item['backup'] else ""))
+                    if item.get("error") or item["unresolved"]:
+                        ui.warn(str(item.get("error") or item["unresolved"]))
+            return int(any(item.get("error") or item["unresolved"] for item in results))
         return doctor.run(ns.fix, ns.yes, ns.json)
     return 2
 
@@ -426,12 +421,12 @@ def launch(g: Globals, codex_args: list[str]) -> int:
     cfg = config.load()
     names = profiles.names(cfg)
     if not names:
-        ui.error("no profiles yet", ["mycodex profile add", "mycodex migrate   # import accounts from prodex"])
+        ui.error("No saved accounts yet", ["mycodex profile add", "mycodex migrate   # import accounts from prodex"])
         return 1
     name = resolve.resolve(g.profile, names, cfg) if g.profile else accounts.pick_start_profile(cfg)
     profile = profiles.get(name, cfg)
     if profile is None or not profile.logged_in:
-        ui.error(f"profile {name} has no login", [f"mycodex profile reauth {name}"])
+        ui.error(f"Account {name} needs sign-in", [f"mycodex profile reauth {name}"])
         return 1
     rotate = cfg["rotation"]["enabled"] if g.rotate is None else g.rotate
     return launcher.run(profile, codex_args, rotate, g.dry_run)
@@ -453,19 +448,34 @@ def main(argv: list[str] | None = None) -> int:
     if not g.rest:
         return launch(g, [])
     command, args = g.rest[0], g.rest[1:]
+    try:
+        uuid.UUID(command)
+    except ValueError:
+        pass
+    else:
+        if len(command) == 36:
+            return launch(g, ["resume", command, *args])
     if command not in OWN_COMMANDS:
         return launch(g, g.rest)
     if command == "__remote-serve":
         from . import remote
         return remote.serve()
     if command == "help":
+        if any(arg in ("-h", "--help") for arg in args):
+            Parser("help").parse(args)
         if args:
-            sub_help(args[0])
+            sub_help(" ".join(args))
         else:
             top_help()
         return 0
     if command == "version":
+        Parser("version").parse(args)
         return versions()
+    if g.dry_run and not any(arg in ("-h", "--help") for arg in args):
+        if command != "migrate" and not (command == "projects" and args[:1] == ["clean"]):
+            ui.error("Preview (--dry-run) works for terminal launches, projects clean, and migrate. This command does not support preview.",
+                     [f"mycodex help {command}"])
+            return 2
     if command in ("login", "logout"):
         ui.error(f"`{command}` is managed per profile by mycodex",
                  ["mycodex profile add            # log in a new account",
@@ -473,12 +483,19 @@ def main(argv: list[str] | None = None) -> int:
                   "mycodex profile remove <NAME>  # sign an account out and delete it",
                   f"mycodex -- {command} ...       # raw codex {command} inside the active profile"])
         return 2
+    if command in helptext.GROUPS and args in (["--help"], ["-h"]):
+        sub_help(command)
+        return 0
     if command in ("profile", "profiles"):
         return cmd_profile(["list", *args] if command == "profiles" else args, g)
     if command == "threads":
         return cmd_threads(args)
+    if command == "projects":
+        return cmd_projects(args, g.dry_run)
+    if command == "use":
+        return cmd_profile(["use", *args], g)
     if command == "migrate":
-        return cmd_migrate(args)
+        return cmd_migrate(args, g.dry_run)
     if command == "quota":
         return cmd_quota(args, g)
     if command == "rotation":
@@ -491,10 +508,16 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def entry() -> None:
+    from .appserver import AppServerError
+    from .auth import AuthError
+    from .validation import InvalidData
     try:
         code = main()
     except KeyboardInterrupt:
         code = 130
     except BrokenPipeError:
         code = 0
+    except (AppServerError, AuthError, InvalidData, OSError) as exc:
+        ui.error(str(exc))
+        code = 1
     sys.exit(code)

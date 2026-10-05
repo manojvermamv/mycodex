@@ -5,6 +5,13 @@ exact sources of the installed versions. Its first version (0.1) was a layer ove
 0.2 removed that dependency. These notes record what was found, the decisions that
 followed, and how the result was verified.
 
+The original discovery and host observations below describe the 2026-10-03 baseline;
+they are historical evidence, not a current quota/process snapshot or a complete contract
+for every recovery path. Reviewed again on 2026-10-04: see
+[workflow-audit.md](workflow-audit.md) for completed additions and
+[project-review.md](project-review.md) for reproduced remaining issues. The package still
+reports `0.2.0`, while the working tree includes unreleased changes.
+
 Inspected versions: Codex CLI 0.160.0 (official standalone package, source tag
 `rust-v0.160.0`) and prodex 0.435.1 (the installed binary's SHA-256 matched the release
 asset). Host: Debian 13, systemd 257 with a user instance and lingering, Python 3.13,
@@ -105,14 +112,14 @@ replay, which HTTPS transport makes unnecessary.
 | Requirement | Outcome |
 |---|---|
 | Persistent per-account login | one `CODEX_HOME` per account in `~/.codex/profiles/<name>`, logged in with `codex login`; mycodex refreshes tokens only when expiring or rejected |
-| One shared `~/.codex`, same threads | shared links plus `CODEX_SQLITE_HOME`; everything uses the `openai` tag, so one thread list everywhere |
+| One shared `~/.codex`, same threads | shared links plus `CODEX_SQLITE_HOME`; normal launches retain `openai`, while provider overrides and mobile loading/filtering still matter |
 | `~/.codex/profiles/<name>` layout | real account homes there |
 | Official TUI unchanged, native arguments pass through | `mycodex` runs `codex` with only `-c openai_base_url=…` added |
 | Automatic rotation | per-request proxy with pre-commit rotation, pauses until reset |
-| Rotation enable, disable and order | global switch, per-account disable and order all apply inside sessions |
+| Rotation enable, disable and order | exclusions/order refresh in running proxies; the owner remains eligible; global enable applies to later terminal launches |
 | Remote control with rotation | systemd user service: `codex remote-control` behind an in-process proxy, umask 0022 |
 | Remote control without rotation | the same service in pinned mode |
-| Keep alive, restart, survive SSH | `Restart=always`, lingering |
+| Keep alive, restart, survive SSH | `Restart=always`, lingering, subject to systemd restart limits and lifecycle recovery gaps |
 | Single remote instance | codex-managed remote daemons are stopped and their remote-control setting turned off |
 | No dependency on prodex | `mycodex migrate` moves existing accounts; prodex was then uninstalled from the host |
 
@@ -143,6 +150,25 @@ mycodex 0.2 (no prodex):
 
 Not exercised live: an actual mid-session account switch on a real usage limit (requires an
 exhausted account; covered by the integration test) and pinned-mode failover.
+That statement belongs to the original discovery pass. Later user-supplied reports
+describe account rotation, but this fresh review did not independently recreate that
+live event. It did reproduce the immediate-child-exit gap in periodic relay failover.
+
+## 2026-10-04 workflow additions and fresh review
+
+- Added thread linking with metadata update plus resume, project list/add/guarded cleanup,
+  account-specific earned-reset consumption, and UUID/profile shortcuts.
+- Added 5% fresh-request headroom routing, opt-in automatic redemption, and a new-start
+  failover default while preserving saved restart settings.
+- Verified and repaired four legacy rollout paths with a private SQLite backup, then
+  confirmed the existing thread was loaded/idle in its project through read-only RPCs.
+- Generated experimental schemas and initialized a temporary unauthenticated stdio server
+  against installed Codex 0.160.0; no real reset credit was consumed.
+- Expanded verification from 38 to 81 tests, passing with temporary homes and external
+  HTTP/process/signal guards. Coverage is described in [architecture.md](architecture.md#tests).
+- A fresh pass through all modules/docs reproduced ten groups of remaining issues,
+  including confirmation ordering, CLI flags, quota parsing, thread lookup, numeric schema
+  selection, and WebSocket Ping handling. Other risks are labeled as source findings.
 
 ## 5. Known limits
 
@@ -154,3 +180,37 @@ exhausted account; covered by the integration test) and pinned-mode failover.
    `doctor` reports token invalidations.
 4. The proxy depends on Codex 0.160 behaviour (`openai_base_url`, 426 fallback, auth layout);
    `doctor` warns on other versions.
+5. Project commands require a running remote-control-capable server. Provider tags,
+   metadata, loaded state, and phone rendering are separate checks.
+6. Periodic service failover requires the child to stay alive until a health check;
+   immediate exits currently restart the same relay without that decision.
+7. Pending reset keys/adoption mappings make account state partly durable; deleting it
+   loses retry identity. Shared-file adoption/maintenance are not fully atomic across
+   concurrent Codex writers.
+
+The original discovery remains useful, but the current [whole-project review](project-review.md)
+takes precedence for open defects, claim limits, and implementation priorities.
+
+## Later follow-up: validation and easier commands
+
+The historical 81-test snapshot above is superseded by 114 passing isolated tests.
+R07 quota/auth/config validation is fixed; missing permission is unknown, failed checks
+invalidate stale readiness, malformed refresh does not overwrite login, and corrupt
+durable history is preserved. R04 argument routing and R05 foreground flag handling
+are corrected. Account/usage/phone wording and complete subcommand help are shared
+with the new [command guide](cli-guide.md). R01/R06 remain open and documented in the
+[current review](project-review.md#deferred-service-lifecycle-issues). Running instances
+were left in place; no real reset credit or model turn was used for these tests.
+
+## v0.3.0 publication — 2026-10-05
+
+The additions/fixes described above are now versioned as v0.3.0; see
+[CHANGELOG.md](../CHANGELOG.md). Historical version numbers and test counts describe
+their original discovery passes. The committed runner `tools/run_tests.py` now reproduces
+the 114 passing isolated regressions. The [public cheat sheet](cheatsheet.md) uses generic
+account/folder examples. Personal host notes and temporary recovery scripts stay private.
+
+The corrected guarded deployment completed with the updated source and retained pairing;
+it passed monitoring and later read-only rechecks. The [redeployment guide](redeployment.md)
+records the first observer's false idle-eviction failure and its correction. Release
+publication changes metadata/docs and does not restart active sessions. R01/R06 remain open.

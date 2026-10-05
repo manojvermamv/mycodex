@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import (TESTED_CODEX_SERIES, codex, config, fmt, migrate, paths, procs, profiles, proxy, quota, remote,
                remote_cmd, state, threads, ui)
+from . import maintenance
 
 OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
 
@@ -27,6 +28,16 @@ class Report:
 def run(fix: bool = False, assume_yes: bool = False, as_json: bool = False) -> int:
     report = Report()
     cfg = config.load()
+
+    for item in maintenance.audit(fix=fix):
+        if item.get("error") or item["legacy"]:
+            remaining = item["legacy"] - item["repaired"]
+            report.add("rollout paths", WARN if remaining or item.get("error") else OK,
+                       f"{item['database']}: legacy {item['legacy']}, repaired {item['repaired']}"
+                       + (f"; backup {item['backup']}" if item["backup"] else "")
+                       + (f"; unresolved {item['unresolved']}" if item["unresolved"] else "")
+                       + (f"; {item['error']}" if item.get("error") else "")
+                       + (" (mycodex doctor --fix-rollout-paths)" if remaining and not fix else ""))
 
     # -- codex ------------------------------------------------------------------------------
     codex_version = codex.version()

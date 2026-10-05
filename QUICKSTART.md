@@ -2,7 +2,33 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-The current version in this repository is `0.2.0`.
+This guide targets **v0.3.0**, released on 2026-10-05.
+The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
+for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
+
+## Understand commands and messages
+
+The [command guide](docs/cli-guide.md) explains every option in everyday language.
+A saved account is a **profile** in command names, and a conversation is a **thread**.
+Use `mycodex help profile add` or `mycodex threads link --help` for detailed instructions
+without supplying an account or conversation ID. Existing commands and flags still work.
+
+- **ready**: the service explicitly confirmed that usage is allowed.
+- **limit reached**: wait for the displayed reset, switch accounts, or deliberately spend
+  an earned credit with `mycodex quota redeem NAME`.
+- **not confirmed**: try the usage check again later. Missing or malformed information
+  does not count as readiness. JSON uses the status `unknown`.
+- **sign in again**: run `mycodex profile reauth NAME`. Damaged login files can be repaired
+  through the same command.
+
+`mycodex --profile work quota` checks that account; `quota --all` checks every account.
+Watch seconds and list/log counts must be greater than zero. Incorrect values give an
+explanation before the command runs. Foreground phone mode rejects service-only options.
+Damaged settings/history are preserved, so correct the reported file or recover it
+from a backup. Never erase account history just to clear a quota cache.
+
+The two deferred service issues are [R01 and R06](docs/project-review.md#deferred-service-lifecycle-issues).
+No running service is automatically restarted to load these source changes.
 
 ## 1. Check prerequisites
 
@@ -39,8 +65,10 @@ mycodex --version
 mycodex doctor
 ```
 
-`doctor` should report `overall ok` (or warnings that only concern accounts you have not
-added yet).
+Inspect every doctor warning: its exit status is nonzero for failures, but warnings can
+still return zero. Ordinary quota/doctor checks may refresh credentials and save quota
+snapshots; they are not strictly offline. `mycodex profile list --no-quota` skips usage
+queries. Help/preview currently may relocate legacy mycodex state on startup.
 
 ## 3. Add your accounts
 
@@ -63,8 +91,10 @@ mycodex migrate --dry-run
 mycodex migrate
 ```
 
-When `mycodex doctor` passes, prodex can be uninstalled; the README's
-[Coming from prodex](README.md#coming-from-prodex) lists the four commands.
+Migration can restart an active remote service. Schedule it around existing work and
+inspect the result before removing compatibility paths. If doctor finds stale legacy
+rollout references, use `mycodex doctor --fix-rollout-paths` and inspect unresolved entries.
+The README's [Coming from prodex](README.md#coming-from-prodex) covers later cleanup.
 
 Optional short names:
 
@@ -80,6 +110,8 @@ mycodex quota
 ```
 
 `ROTATION READY` shows which accounts can take requests right now.
+For one account use `mycodex quota work`; global `--profile work` currently does not
+restrict ordinary quota inspection.
 
 ## 5. Launch Codex
 
@@ -93,6 +125,7 @@ Codex accepts works the same way:
 ```bash
 mycodex --profile work              # start on a specific account
 mycodex resume --last               # continue the latest thread (any account can resume it)
+mycodex <full-thread-UUID>           # shorthand for resume with a full 36-character ID
 mycodex exec "review this repository"
 mycodex --no-rotate                 # this account only for this session
 ```
@@ -108,11 +141,21 @@ mycodex rotation order work personal    # which account is tried next
 mycodex rotation disable personal       # never switch to it
 mycodex rotation disable                # turn rotation off for every launch
 mycodex rotation log -f                 # watch switches as they happen
+mycodex rotation headroom 5             # default fresh-request 5h threshold
+mycodex rotation auto-redeem off        # credits preserved by default
+mycodex quota redeem work               # explicitly consume an earned reset, if needed
 ```
 
-When the active account hits a usage limit, the next request goes to the next ready
-account, inside the same session and thread. The exhausted account is paused until its
-limit resets.
+Fresh model requests without a sticky turn token can prefer a healthier account when
+the current account's 5h headroom is below 5%. Recent usage snapshots are required.
+Eligible failures before response commitment retry another account in the same thread;
+failures after commitment are returned to Codex. Clearing a pause does not reset quota.
+`rotation disable personal` excludes it as a switch target, but a proxy launched as that
+profile still includes its owner. The global switch applies to later terminal launches.
+
+Reset redemption reuses a persistent idempotency key after an uncertain failure. Keep
+`state/accounts.json` intact for retries. Automatic spending requires explicitly enabling
+`rotation auto-redeem on`; no credit is spent merely by checking quota.
 
 ## 7. Connect your phone
 
@@ -130,24 +173,41 @@ pick this host. If it does not appear, create a pairing code and enter it in the
 mycodex remote pair
 ```
 
+Starting remote control is a lifecycle action: it can stop conflicting official remote
+daemons or restart the existing service. New starts enable relay failover by default;
+`--no-failover` opts out. `remote restart` preserves the saved choice. Periodic failover
+currently needs the child to stay alive; it does not cover immediate child exit. A relay
+account change can require phone sign-in/pairing with the replacement account.
+
+Register a project without a model turn, then link an existing thread:
+
+```bash
+mycodex projects add ~/your-project --name "My Project"
+mycodex projects
+mycodex threads link <thread-id> --project ~/your-project
+```
+
 To start a new thread inside a project (the project is created if it does not exist yet):
 
 ```bash
 mycodex remote seed ~/your-project --name "First task" --message "Describe the first task here"
 ```
 
-Threads you start in the terminal show on the phone too, but outside any project; see
-[docs/projects-and-threads.md](docs/projects-and-threads.md) for why, and for doing the
-same from a script through `mycodex app-server proxy`.
+The wrapper's terminal launch does not assign a project. Linking updates metadata and
+resumes the existing thread on the server without a turn or restart. Correct provider
+tags and loaded state help establish eligibility; phone rendering still depends on the
+client. See [docs/projects-and-threads.md](docs/projects-and-threads.md).
 
 Prefer one account with no rotation for the phone?
 
 ```bash
-mycodex --profile work remote-control --pinned
+mycodex --profile work remote-control --pinned --no-failover
 ```
 
 The phone and your terminal sessions share one thread list. The service restarts on its
-own after crashes and keeps running after you close SSH.
+own after child exits, subject to systemd restart limits, and keeps running after you
+close SSH with lingering enabled. Foreground debugging lacks service failover and
+rejects cwd/failover/force/no-wait flags instead of ignoring them.
 
 ## 8. Everyday checks
 
@@ -170,22 +230,40 @@ Common fixes:
 
 - `auth invalid` on an account: `mycodex profile reauth NAME`
 - an account still paused after its reset: `mycodex rotation reset NAME`
-- a thread missing on the phone: `mycodex threads adopt ID`
-- phone shows no project: `mycodex remote seed ~/your-project`
+- a thread with another provider: `mycodex threads adopt ID` creates an `openai` copy
+- an existing thread missing its project/loading: `mycodex threads link ID --project DIR`
+- phone shows no project: `mycodex projects add ~/your-project`, then link or seed
+- stale legacy rollout paths: `mycodex doctor --fix-rollout-paths` (backed up, no usage query)
 - another remote-control server is running: stop it, or `mycodex remote-control --force`
 - remote service restarting: `mycodex remote logs`
 
 More in the README's [Troubleshooting](README.md#troubleshooting).
 
+Preview cleanup with `mycodex projects clean "My Project" --dry-run`. After inspecting
+the candidates, omit that flag to confirm archival. Only empty or untouched built-in
+ready-check histories qualify; the client rechecks them, but does not provide an atomic
+cross-client cleanup lock. Global `mycodex --dry-run projects clean ...` also previews
+cleanup; other management commands reject unsupported preview.
+
 ## 10. Update or uninstall
 
-Update:
+Inspect uncommitted changes before updating:
 
 ```bash
-git -C ~/mycodex pull
-~/mycodex/install.sh
-mycodex remote restart
+git -C ~/mycodex status --short
+mycodex remote status
 ```
+
+Preserve your changes, then update from the desired revision. In a clean checkout:
+
+```bash
+git -C ~/mycodex pull --ff-only
+~/mycodex/install.sh
+```
+
+New invocations load the updated code. Running processes keep their loaded modules;
+plan `mycodex remote restart` separately when active turns can tolerate interruption.
+No service restart is needed simply to update documentation.
 
 Uninstall. Your accounts in `~/.codex/profiles` and your threads in `~/.codex` stay where
 they are, so plain `codex` with `CODEX_HOME=~/.codex/profiles/<name>` still works:
@@ -203,3 +281,16 @@ rm -rf ~/mycodex
 - [docs/projects-and-threads.md](docs/projects-and-threads.md): project threads, with one command or through the app-server proxy
 - [docs/architecture.md](docs/architecture.md): how accounts, the rotation proxy and the remote service work
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): the investigation behind the design
+- [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
+- [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
+
+## v0.3.0 validation and deployment
+
+For local regression checks, run `python3 -B tools/run_tests.py`; 114 tests passed with
+external actions blocked. The guarded host restart completed with the updated source,
+connected relay/proxy, and retained phone pairing/projects. The observer completed
+two minutes of healthy monitoring and removed its unit. See
+[redeployment.md](docs/redeployment.md) for the recorded procedure and its limits.
+
+Do not restart active work merely to refresh the displayed version number. Already
+running processes retain loaded metadata; new CLI commands report v0.3.0.
