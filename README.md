@@ -19,8 +19,8 @@ The Codex you get is the unmodified original. mycodex is a small, dependency-fre
 tool around it: it prepares each account's Codex home, runs a local rotation proxy in
 front of the ChatGPT backend, and manages the remote-control service.
 
-The current release is **v0.3.0** (2026-10-05). See the [changelog](CHANGELOG.md),
-[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.3.0), and
+The current release is **v0.4.0** (2026-10-08). See the [changelog](CHANGELOG.md),
+[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.0), and
 [everyday commands](docs/cheatsheet.md). The complete source, tests, and public docs
 are versioned together.
 The [restart and recovery plan](docs/redeployment.md) explains a guarded deployment
@@ -83,8 +83,8 @@ mycodex ──► official codex (TUI, exec, resume, fork, remote-control: uncha
   local proxy. The proxy sends each request with the credentials of a ready account and
   retries eligible usage/rate failures on another account before the response is committed.
   Fresh requests can also prefer a healthier account using recent quota snapshots.
-  When a saved quota reset time becomes due, the proxy checks that account again at the
-  next fresh model-request boundary. An explicitly ready result restores its configured
+  When a persisted 5-hour or weekly quota reset time becomes due, the proxy checks that
+  account again at the next fresh model-request boundary. An explicitly ready result restores its configured
   priority; an unknown or still-limited result keeps it paused. An in-progress turn keeps
   its account, and status continues to show the saved reset date and time while paused.
 - **Remote control**: a systemd user service runs the official `codex remote-control`,
@@ -655,15 +655,20 @@ mycodex is an independent project and is not affiliated with OpenAI.
 
 ## Release verification
 
-Run `python3 -B tools/run_tests.py` from a clone to execute the 114-test suite in
+Run `python3 -B tools/run_tests.py` from a clone to execute the 132-test suite in
 temporary homes with external HTTP, child processes, and signals blocked. The tests
 use local fake backends; they do not consume real reset credits or operate live services.
 
 The 2026-10-05 host deployment completed successfully and retained its phone identity,
 pairing, and conversation projects. Its corrected temporary observer passed two-minute
 monitoring and removed its own unit. A later read-only check confirmed the PATH launcher,
-service launcher, source snapshot, proxy, and protected processes. The version metadata
-change to v0.3.0 does not restart or reload an already-running Python process.
+service launcher, source snapshot, proxy, and protected processes. This is the historical
+v0.3.0 deployment.
+
+As of 2026-10-08, v0.4.0 contains 29 package modules. Its guarded restart is pending:
+this conversation is in the relay cgroup, so an independent observer will be armed after
+release validation and wait for all active threads/tools to finish plus ten seconds idle.
+New CLI commands report v0.4.0; updating source alone does not reload the running proxy.
 
 R01/R06 and the other open review items are explicitly retained in the
 [project review](docs/project-review.md). Personal host notes, runtime state, credentials,

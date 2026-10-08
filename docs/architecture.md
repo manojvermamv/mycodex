@@ -3,8 +3,8 @@
 This document explains how mycodex works internally and why each mechanism exists. For
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
-Reviewed against the full working tree on 2026-10-04; these additions are published
-in **v0.3.0** on 2026-10-05. See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+The 2026-10-04 review and v0.3.0 publication are historical. Updated for
+**v0.4.0** on 2026-10-08 (29 package modules, 132 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -45,7 +45,8 @@ Rules mycodex follows:
 | `quota.py`, `redemption.py` | usage snapshots and isolated, idempotent earned-reset redemption |
 | `projects.py`, `maintenance.py` | project workflows and narrow legacy rollout-path repair |
 | `state.py` | shared pauses/cache plus durable adoption mappings and pending reset retry keys |
-| `proxy.py` | the rotation proxy |
+| `proxy.py` | rotation proxy, due quota-pause checks, priority restoration, and active response affinity |
+| `model_cache.py` | safe validated, atomic relay model-catalogue copying |
 | `launch.py` | starting codex as a profile, with or without the proxy |
 | `remote.py`, `remote_cmd.py` | the remote-control service and its commands |
 | `threads.py`, `migrate.py` | thread list and adoption, prodex migration |
@@ -156,7 +157,7 @@ account whose pause ends first is asked anyway, so Codex receives a real answer.
 
 A quota pause is reconsidered only while planning a fresh model request and after its
 saved pause deadline or an exhausted window's saved reset time is due. The proxy reuses
-the saved per-window reset timestamps and pause deadline; status displays the saved time.
+the persisted 5-hour/weekly reset timestamps and pause deadline; status displays the saved time.
 It checks current usage before ranking the account again. Only an explicit ready result
 clears the quota pause and restores the account's configured priority. Unknown or still
 limited results retain the pause, using the latest known reset deadline when available.
@@ -236,6 +237,7 @@ The settings schema version is 2. Its defaults include:
 | `rotation.min_quota_headroom` | `5.0` | fresh model-request 5h threshold; 0 disables proactive routing |
 | `rotation.auto_redeem` | `false` | explicit opt-in to earned-reset spending |
 | `remote.mode` | `rotating` | separate service mode; global terminal rotation switch does not pin it |
+| `remote.models_source` | `null` | saved Plus model-cache source; optional refresh before managed server startup |
 | `remote.failover` | `true` | new-start default; restart preserves the stored value |
 | `remote.failover_check_seconds` | `300` | periodic service check, with a 60-second minimum |
 
@@ -312,7 +314,10 @@ daemon conflict handling can interrupt active work; none are used just to refres
 selected Plus profile's model catalogue into the configured relay profile and records that
 source for future managed starts. It does not call service lifecycle operations, change
 `auth.json` or `installation_id`, or revoke pairing. The `__remote-serve` entry point
-repeats the optional atomic copy before it starts the official server. Missing, malformed,
+repeats the optional atomic copy before it starts the official server. Source files must
+be regular files, not symbolic links; destination symlinks and unsafe paths are rejected.
+UTF-8 JSON validation includes readable failure for deeply nested payloads; the atomic
+replacement has mode 0600 and changes only the relay model cache. Missing, malformed,
 or otherwise unreadable source caches preserve the relay cache, produce a warning, and do
 not stop server startup. Foreground debugging bypasses this managed-start refresh.
 
@@ -415,7 +420,10 @@ end-to-end proxy run against a local fake backend: a usage limit moves the reque
 next account, a failure inside the stream before output does too, a 401 refreshes once,
 exhausted accounts return the earliest reset, turn-state tokens stay with their issuer,
 and WebSocket upgrades get 426.
-The suite contains 114 tests across three files and passed again on 2026-10-05 with these guards. Added workflow
+The suite contains 132 tests across three files as of 2026-10-08 (the 2026-10-05
+v0.3.0 suite had 114). New regressions cover reset-due priority restoration, active
+response affinity, model-cache copying and startup warnings, source/destination safety,
+and deeply nested JSON failures. Added workflow
 coverage includes pagination/ambiguity, link/hydration, guarded cleanup, exact completion
 matching, fresh/sticky headroom routing, reset retries/permission/account checks, and
 SQLite backups/active-lock handling. New boundary/CLI coverage checks empty and malformed
@@ -458,7 +466,7 @@ part of source/help updates.
 
 ## Published release and host verification
 
-[Changelog](../CHANGELOG.md) records v0.3.0 behavior and compatibility changes.
+[Changelog](../CHANGELOG.md) records v0.4.0 behavior and compatibility changes.
 The test runner is committed at `tools/run_tests.py`; deployment observer scripts and
 artifacts remain private runtime files. They are described in
 [redeployment.md](redeployment.md), not exposed as a new CLI lifecycle guarantee.
@@ -466,6 +474,10 @@ artifacts remain private runtime files. They are described in
 The corrected host observer completed with `outcome: deployed` on 2026-10-05 after
 normal idle eviction was accepted during monitoring. The relay uses the working-tree
 launcher and keeps its account/pairing. Its supervisor and source matched the successful
-deployment during read-only rechecks. Release metadata now reports 0.3.0 for new
-processes; already-running processes retain earlier loaded metadata until a planned
-restart. Publication does not restart them.
+deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
+
+The 2026-10-08 v0.4.0 follow-up has 29 modules and 132 isolated tests. Its guarded
+restart is pending: this conversation is in the relay cgroup. After release validation,
+an independent observer will be armed to wait for all active threads/tools and ten
+seconds idle. New invocations report 0.4.0; updating CLI/source alone does not reload
+the running proxy.

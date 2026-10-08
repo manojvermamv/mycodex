@@ -9,3 +9,8 @@ __pycache__/
 # personal account/host notes; public command examples live in docs/cheatsheet.md
 /CHEATSHEET.md
 /notes/
+
+# local agent instructions and planning artifacts
+/AGENTS.md
+/.superpowers/
+/docs/superpowers/

@@ -7,8 +7,8 @@ methods before the explicit backed-up repair and metadata/resume actions recorde
 The historical quota figures supplied in the request were not treated as current.
 This records the completed workflow changes, not a claim that the whole project is free
 of defects. The subsequent [whole-project review](project-review.md) lists reproduced
-open issues and additional recovery/concurrency risks. Package version remains `0.2.0`;
-the working-tree additions are unreleased.
+open issues and additional recovery/concurrency risks. At the 2026-10-04 audit, package
+version remained `0.2.0` and the additions were unreleased. See the dated publication and v0.4.0 follow-ups below.
 
 | Finding | Evidence and disposition |
 |---|---|
@@ -18,7 +18,6 @@ the working-tree additions are unreleased.
 | Project list/add missing | Confirmed. Added paginated project inspection and idempotent folder registration without a dummy thread. Counts cover non-archived threads across all providers/sources. |
 | Legacy rollout references | Confirmed: four legacy references in one shared database, not independent per-profile copies. All four had matching replacement rollouts, including one archived rollout. Added guarded repair with SQLite backup and compare-and-update. Orphans and ambiguous paths are preserved and reported. |
 | Proactive quota routing missing | Confirmed: the old proxy ranked fallback accounts but retained the current account until rejection. Added a configurable 5% default threshold for fresh model requests without a turn-state token, refreshing stale snapshots. Sticky turns and reactive fallbacks are retained. |
-| Quota pause could outlast its reset | A quota-paused account is checked again at a fresh model-request boundary once its saved reset or pause deadline is due. Only an explicit ready response clears the pause and restores configured priority; unknown or still-limited checks keep it paused. Existing reset timestamps and pause deadlines remain visible in status, and an in-progress turn keeps account affinity. |
 | Relay failover default off | Confirmed as a setting, rather than an observed outage. `remote start` defaults to failover on; `remote restart` preserves the saved choice and `--no-failover` opts out. Changing the relay account still requires the phone to sign in to that account. |
 | UUID/profile shortcuts missing | Added full-UUID resume shorthand and top-level `use`. |
 | Project cleanup missing | Added preview/confirmation and API archival only for verified empty or untouched built-in ready-check histories; active work and descendants are preserved. |
@@ -89,7 +88,7 @@ preview cleanup. Other management commands reject unsupported global preview. Ac
 were only a cache. These limits and the fresh review's open lifecycle/input-validation
 issues are tracked with their current status in the project review.
 
-## Follow-up: quota validation and command clarity
+## Follow-up: quota validation and command clarity — 2026-10-05
 
 R07 is fixed: HTTP/RPC readiness needs explicit permission; empty/malformed replies become
 unknown and replace old healthy cache. Login/settings shapes and numeric values are
@@ -116,7 +115,24 @@ and proxy, retained pairing/projects, and independent Codex processes. The first
 observer's false failure on normal idle eviction and the corrected 22-test observer are
 recorded in [redeployment.md](redeployment.md). No reset credit was spent.
 
-This workflow and validation work is published as [v0.3.0](../CHANGELOG.md). The public
-project suite remains 114 tests, now reproducible with `python3 -B tools/run_tests.py`.
+This workflow and validation work is published as [v0.3.0](../CHANGELOG.md). The v0.3.0 public
+project suite contained 114 tests; `python3 -B tools/run_tests.py` runs the current suite.
 Observer tests/scripts remain private host artifacts. Publishing version metadata and
 docs does not restart or reload the running relay. R01/R06 stay open in the review.
+
+## v0.4.0 follow-up — 2026-10-08
+
+The quota-pause priority correction belongs to v0.4.0. Persisted 5-hour/weekly reset
+times or pause deadlines trigger live checks at the next fresh request when due.
+Explicit readiness restores configured account priority; unknown/still-limited checks
+keep the pause. Active responses and turn-state tokens retain account affinity.
+`remote models share [SOURCE]` copies a validated Plus catalogue into the configured
+relay, saves the source, and refreshes it before later managed starts. Safe source and
+destination checks and readable deeply nested JSON failures preserve other account data;
+optional startup failures warn and continue with the existing relay cache.
+
+The package now has 29 modules and 132 isolated tests. The guarded restart is pending:
+this conversation runs in the relay cgroup. After release validation an independent
+observer will be armed to wait for all active threads/tools and ten seconds idle.
+Updating CLI/source alone does not reload the proxy. R01/R06 and the other documented
+open issues remain. See the [redeployment guide](redeployment.md).

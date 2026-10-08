@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.3.0**, released on 2026-10-05.
+This guide targets **v0.4.0**, dated 2026-10-08.
 The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
 for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
 
@@ -150,8 +150,8 @@ Fresh model requests without a sticky turn token can prefer a healthier account 
 the current account's 5h headroom is below 5%. Recent usage snapshots are required.
 Eligible failures before response commitment retry another account in the same thread;
 failures after commitment are returned to Codex. Clearing a pause does not reset quota.
-When a saved quota reset date and time is due, the next fresh prompt checks that profile
-again. It regains its configured priority only when the service explicitly confirms it is
+When a persisted 5-hour or weekly quota reset date and time is due, the next fresh
+prompt checks that profile again. It regains its configured priority only when the service explicitly confirms it is
 ready. Unknown or still-limited results keep it paused. An in-progress turn stays with its
 current account; the next fresh prompt can use the restored priority.
 `rotation disable personal` excludes it as a switch target, but a proxy launched as that
@@ -304,13 +304,14 @@ rm -rf ~/mycodex
 - [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
 - [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
 
-## v0.3.0 validation and deployment
+## v0.4.0 validation and deployment — 2026-10-08
 
-For local regression checks, run `python3 -B tools/run_tests.py`; 114 tests passed with
-external actions blocked. The guarded host restart completed with the updated source,
-connected relay/proxy, and retained phone pairing/projects. The observer completed
-two minutes of healthy monitoring and removed its unit. See
-[redeployment.md](docs/redeployment.md) for the recorded procedure and its limits.
+For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
+132 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
+for v0.3.0; the v0.4.0 guarded restart is pending. This conversation runs in the relay
+cgroup. After release validation, an independent observer will be armed and wait for
+all active threads/tools to finish and ten seconds idle. See
+[redeployment.md](docs/redeployment.md) for the procedure and its limits.
 
-Do not restart active work merely to refresh the displayed version number. Already
-running processes retain loaded metadata; new CLI commands report v0.3.0.
+New CLI commands report v0.4.0. Updating source alone does not reload the running proxy;
+already-running processes retain their loaded modules until a guarded restart.

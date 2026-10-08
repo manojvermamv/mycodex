@@ -88,8 +88,8 @@ connection provides the independent observer without starting another host servi
 
 ## Validation and scope
 
-The current candidate passed 114 isolated tests. The frozen earlier recovery copy
-passed its 81 tests. Twenty mocked observer tests cover active/tool gating, quiet-window
+For the 2026-10-05 v0.3.0 handoff, the candidate passed 114 isolated tests.
+The frozen earlier recovery copy passed its 81 tests. Twenty mocked observer tests cover active/tool gating, quiet-window
 checks, source/config guards, operator replacement, pairing/project/identity checks,
 bounded rollback, new active work, cancellation, monitoring, and private state files.
 The corrected observer adds two regressions for ordinary idle-thread eviction (22 total).
@@ -143,3 +143,18 @@ successful supervisor; that counter did not increase during the later verificati
 The observer implementation/tests/snapshots remain private host runtime artifacts;
 clones receive this guide, not a built-in deployment observer command. Version metadata
 publication leaves existing processes running with their loaded metadata.
+
+## v0.4.0 handoff pending — 2026-10-08
+
+The current candidate contains 29 package modules and 132 isolated tests. The completed
+2026-10-05 deployment and 81/114-test evidence above belong to earlier snapshots.
+The v0.4.0 guarded restart has not completed: this conversation is in the relay cgroup.
+After release validation an independent observer will be armed, waiting for all active
+threads/tools to finish and ten seconds idle before restarting. New work resets the
+idle window; the observer must remain outside the relay cgroup.
+
+Updating the CLI/source alone does not reload the running proxy. The observer must
+validate the candidate and recovery snapshot before acting, then verify relay/proxy
+health and retained identity/pairing/projects using the guarded procedure above.
+A completed observer result is required before claiming deployment success. R01/R06
+and the other documented lifecycle/concurrency limitations remain open.

@@ -9,8 +9,8 @@ The original discovery and host observations below describe the 2026-10-03 basel
 they are historical evidence, not a current quota/process snapshot or a complete contract
 for every recovery path. Reviewed again on 2026-10-04: see
 [workflow-audit.md](workflow-audit.md) for completed additions and
-[project-review.md](project-review.md) for reproduced remaining issues. The package still
-reports `0.2.0`, while the working tree includes unreleased changes.
+[project-review.md](project-review.md) for reproduced remaining issues. At that 2026-10-04 review, the package reported `0.2.0` while the working tree
+included unreleased changes. See the dated release follow-ups below.
 
 Inspected versions: Codex CLI 0.160.0 (official standalone package, source tag
 `rust-v0.160.0`) and prodex 0.435.1 (the installed binary's SHA-256 matched the release
@@ -191,7 +191,7 @@ live event. It did reproduce the immediate-child-exit gap in periodic relay fail
 The original discovery remains useful, but the current [whole-project review](project-review.md)
 takes precedence for open defects, claim limits, and implementation priorities.
 
-## Later follow-up: validation and easier commands
+## Later follow-up: validation and easier commands — 2026-10-05
 
 The historical 81-test snapshot above is superseded by 114 passing isolated tests.
 R07 quota/auth/config validation is fixed; missing permission is unknown, failed checks
@@ -214,3 +214,18 @@ The corrected guarded deployment completed with the updated source and retained 
 it passed monitoring and later read-only rechecks. The [redeployment guide](redeployment.md)
 records the first observer's false idle-eviction failure and its correction. Release
 publication changes metadata/docs and does not restart active sessions. R01/R06 remain open.
+
+## v0.4.0 follow-up — 2026-10-08
+
+The current package has 29 modules and 132 isolated tests; the 81/114-test results above
+remain historical. Due persisted 5-hour/weekly resets now trigger checks at the next
+fresh request, restoring configured priority only on explicit readiness and preserving
+active response affinity. Relay model-cache sharing saves a Plus source for managed
+starts and safely copies only its catalogue; invalid sources, unsafe paths, and deeply
+nested JSON fail readably. Optional startup cache failures warn and continue.
+
+The v0.4.0 guarded restart is pending. This conversation is in the relay cgroup; after
+release validation an independent observer will be armed to wait for all active
+threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
+running proxy. The [redeployment guide](redeployment.md) describes the handoff, and
+R01/R06 plus the other open review items remain unresolved.

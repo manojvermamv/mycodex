@@ -45,6 +45,10 @@ mycodex rotation auto-redeem off     # preserve earned credits for manual spendi
 mycodex rotation log -n 20
 ```
 
+Saved 5-hour/weekly reset times trigger live checks at the next fresh request when due.
+Explicit readiness restores configured account priority; unknown or limited results keep
+the pause. An active response retains its account.
+
 ## Projects and conversations
 
 These commands require a running phone-capable app-server, except local thread listing.
@@ -68,12 +72,17 @@ verified empty/ready-check histories and does not provide an atomic cross-client
 mycodex remote status
 mycodex remote pair
 mycodex remote clients
+mycodex remote models share work     # copy Plus catalogue; save source for later starts
 mycodex remote logs -n 40
 mycodex status --no-quota
 mycodex processes
 mycodex doctor
 mycodex doctor --fix-rollout-paths    # backed-up path repair; no online usage check
 ```
+
+Sharing models copies only a validated cache and leaves pairing and service lifecycle
+intact. Later managed starts refresh the saved source; an optional copy failure warns
+and continues startup with the existing cache.
 
 Starting/stopping/restarting a phone service can interrupt active work. Use the
 [redeployment guide](redeployment.md) to plan a host-side observer before replacing a
@@ -90,4 +99,4 @@ mycodex projects clean --help
 mycodex -- --help                    # official Codex's own commands and options
 ```
 
-See [v0.3.0 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).
+See [v0.4.0 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).

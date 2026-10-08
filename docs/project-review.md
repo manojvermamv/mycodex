@@ -8,8 +8,8 @@ account/service lifecycle command was operated during the follow-up.
 ## Scope and evidence
 
 The original review covered 26 Python modules, two test files, the launcher, installer,
-service unit, runtime settings, and nine then-existing Markdown files. The follow-up
-covers 28 modules, three test files, and all 11 Markdown files, including the ignored
+service unit, runtime settings, and nine then-existing Markdown files. The 2026-10-05 follow-up
+covered 28 modules, three test files, and all 11 Markdown files, including the ignored
 personal cheat sheet and host notes. Public documentation
 uses generic names; private host details remain in ignored files.
 The static banner assets and MIT license/NOTICE were inspected as repository artifacts;
@@ -27,7 +27,7 @@ Evidence falls into three categories:
   and loaded the existing project thread. Those outcomes are recorded in
   [workflow-audit.md](workflow-audit.md), rather than presented as new actions here.
 
-The original 81 tests passed; the follow-up has 114 passing tests in temporary homes
+The original 2026-10-04 review had 81 passing tests; the 2026-10-05 follow-up had 114 passing tests in temporary homes
 with external HTTP, child process creation, and process signals blocked. Those tests validate their covered behavior;
 passing them does not resolve the issues below. The remote service retained its main
 process, start time, and zero restart count during this review.
@@ -185,3 +185,19 @@ committed isolated runner, a public [cheat sheet](cheatsheet.md), and updated pu
 documentation. Historical file counts and 0.2.0 snapshots above describe their original
 passes. Private notes/credentials/state/recovery snapshots are excluded. Version-only
 publication does not reload modules or restart the host service.
+
+## v0.4.0 release follow-up — 2026-10-08
+
+The current package contains 29 modules and three test files (132 isolated tests).
+The dated 26/28-module and 81/114-test counts above describe earlier reviews/releases.
+New coverage verifies quota-pause recovery at the next fresh request after persisted
+5-hour/weekly resets become due, configured priority restoration on explicit readiness,
+and active response affinity. Relay model-cache coverage checks saved sources, atomic
+catalogue-only copying, source/destination safety, deeply nested JSON failures, and
+warning/continued startup on optional cache failure.
+
+The v0.4.0 guarded restart is pending. This conversation runs in the relay cgroup;
+after release validation an independent observer will be armed to wait for all active
+threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
+running proxy. No new deployment success is claimed. R01/R06 and every other finding
+still marked open remain unresolved; see [redeployment.md](redeployment.md).

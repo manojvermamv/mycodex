@@ -1,7 +1,7 @@
 # Command and option guide
 
 Use this guide to choose a command and understand every mycodex option.
-This guide targets mycodex v0.3.0; see the [changelog](../CHANGELOG.md) and
+This guide targets mycodex v0.4.0; see the [changelog](../CHANGELOG.md) and
 [everyday commands](cheatsheet.md).
 
 Command names and flags stay compatible. A saved account is called a **profile**

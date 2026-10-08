@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import ui
+from . import __version__, ui
 
 JSON = ("--json", "Show structured data for scripts instead of the usual table.")
 YES = ("-y, --yes", "Skip the confirmation question. Use after reviewing the changes.")
@@ -142,7 +142,7 @@ def show(name: str = "") -> bool:
 def markdown() -> str:
     """Complete parameter reference generated from the same descriptions as CLI help."""
     lines = ["# Command and option guide", "", "Use this guide to choose a command and understand every mycodex option.",
-             "This guide targets mycodex v0.3.0; see the [changelog](../CHANGELOG.md) and",
+             f"This guide targets mycodex v{__version__}; see the [changelog](../CHANGELOG.md) and",
              "[everyday commands](cheatsheet.md).", "",
              "Command names and flags stay compatible. A saved account is called a **profile**",
              "in commands; a conversation is called a **thread**. The phone account is the",

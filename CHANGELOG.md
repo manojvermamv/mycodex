@@ -1,11 +1,33 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 — 2026-10-08
 
+### Quota recovery and relay models
+
+- Quota-paused accounts are checked again at the next fresh model-request boundary
+  when their persisted 5-hour/weekly reset time or pause deadline is due. Explicit
+  readiness restores configured account priority; unknown or still-limited results
+  retain the pause. Active responses and turn-state tokens keep account affinity.
 - `mycodex remote models share [SOURCE]` copies a selected Plus model catalogue to the
   configured phone relay without restarting it or changing pairing. The saved source is
   refreshed before later managed relay starts; an optional-cache failure warns and leaves
-  the phone service able to start.
+  the existing relay cache and phone service startup intact.
+- Cache copying validates UTF-8 JSON, rejects symbolic-link sources and unsafe
+  destinations, and replaces only `models_cache.json` atomically with private file
+  permissions. Login, installation identity, and other account data are preserved.
+  Malformed or deeply nested JSON produces a readable failure rather than a traceback.
+
+### Upgrade behavior and validation
+
+- New CLI invocations load v0.4.0; updating source alone does not reload the running
+  proxy. The 2026-10-08 guarded host restart is pending. After release validation, an
+  independent observer will wait for all active threads/tools to finish and ten seconds
+  idle before acting. See the [redeployment guide](docs/redeployment.md).
+- The package contains 29 modules; 132 isolated tests pass with external HTTP, child
+  processes, and signals blocked. Generated help and public documentation links are checked.
+- Existing R01/R06 service lifecycle defects and the other limitations in the
+  [project review](docs/project-review.md) remain open. Real reset spending, phone
+  rendering, and full concurrency/recovery behavior are not established by these tests.
 
 ## v0.3.0 — 2026-10-05
 
@@ -35,9 +57,6 @@ redemption, proactive usage routing, and complete plain-language command help.
   RPC snapshots require explicit usage permission; stated limits take precedence.
 - Failed checks invalidate stale ready cache. Legacy snapshots without recorded
   permission need a fresh check. Invalid numeric values and data shapes are rejected.
-- Quota-paused accounts are checked again at a fresh request boundary when their saved
-  reset time is due. Only an explicit ready result clears the pause and restores priority;
-  in-progress turns keep their account, and saved reset times remain visible in status.
 - Damaged login/settings/state and malformed server replies receive readable errors.
   Malformed refresh replies leave saved login untouched. Unreadable durable account
   history is preserved, including pending reset keys and adoption mappings.
