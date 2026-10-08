@@ -83,6 +83,10 @@ mycodex ──► official codex (TUI, exec, resume, fork, remote-control: uncha
   local proxy. The proxy sends each request with the credentials of a ready account and
   retries eligible usage/rate failures on another account before the response is committed.
   Fresh requests can also prefer a healthier account using recent quota snapshots.
+  When a saved quota reset time becomes due, the proxy checks that account again at the
+  next fresh model-request boundary. An explicitly ready result restores its configured
+  priority; an unknown or still-limited result keeps it paused. An in-progress turn keeps
+  its account, and status continues to show the saved reset date and time while paused.
 - **Remote control**: a systemd user service runs the official `codex remote-control`,
   behind the same kind of proxy, and restarts it if it stops.
 
@@ -506,7 +510,10 @@ in [docs/projects-and-threads.md](docs/projects-and-threads.md).
   proactive routing. When the backend answers with a usage
   limit, a rate limit or a deactivated workspace before any output, the request is sent
   again with the next ready account and the exhausted account is paused until its reset.
-  The thread does not change; the turn simply completes on another account.
+  At the saved reset date and time, the next fresh prompt checks the paused account again.
+  A live response must explicitly confirm readiness before its configured priority is
+  restored; otherwise it stays paused. The thread does not change; the turn simply
+  completes on another account.
 - **After commit**: once the proxy commits the response, nothing is moved automatically.
   Its four-second/256 KiB buffering limit can cause commitment before visible answer text.
   When every account is exhausted, Codex shows the usage-limit message with the earliest
@@ -574,7 +581,7 @@ and can replace an existing managed unit copy; it does not install an absent lau
 | Logs report a stale `.prodex` rollout path | `mycodex doctor --fix-rollout-paths`; inspect unresolved entries and retain its backup |
 | A known older thread cannot be linked by UUID | The current lookup scans only the latest 5,000 rows; see R08 in the review |
 | An account shows `auth invalid`, or logs mention `token_invalidated` | `mycodex profile reauth NAME`. Avoid running other long-lived Codex servers on the same account. |
-| An account stays `paused` after its limit reset | `mycodex rotation reset NAME` |
+| An account stays `paused` after its limit reset | Check the saved reset date and time with `mycodex status` or `mycodex rotation status`. The next fresh prompt rechecks the account once that time is due; it returns to configured priority only after a live ready response. If usage is still limited or not confirmed, it remains paused. `mycodex rotation reset NAME` clears the pause manually. |
 | `another remote-control server is running` | Stop it, or rerun with `--force`. |
 | The remote service keeps restarting | `mycodex remote logs` and `mycodex doctor` |
 | `doctor` warns about an untested Codex version | mycodex was verified on Codex 0.160.x; check `mycodex remote status` and a short `mycodex exec` after updates. |

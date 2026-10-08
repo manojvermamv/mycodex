@@ -28,6 +28,9 @@ redemption, proactive usage routing, and complete plain-language command help.
   RPC snapshots require explicit usage permission; stated limits take precedence.
 - Failed checks invalidate stale ready cache. Legacy snapshots without recorded
   permission need a fresh check. Invalid numeric values and data shapes are rejected.
+- Quota-paused accounts are checked again at a fresh request boundary when their saved
+  reset time is due. Only an explicit ready result clears the pause and restores priority;
+  in-progress turns keep their account, and saved reset times remain visible in status.
 - Damaged login/settings/state and malformed server replies receive readable errors.
   Malformed refresh replies leave saved login untouched. Unreadable durable account
   history is preserved, including pending reset keys and adoption mappings.

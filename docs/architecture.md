@@ -154,6 +154,15 @@ Excluded: accounts without a login, accounts in `rotation.disabled` (except the 
 profile), and accounts paused in `state/accounts.json`. If everything is paused, the
 account whose pause ends first is asked anyway, so Codex receives a real answer.
 
+A quota pause is reconsidered only while planning a fresh model request and after its
+saved pause deadline or an exhausted window's saved reset time is due. The proxy reuses
+the saved per-window reset timestamps and pause deadline; status displays the saved time.
+It checks current usage before ranking the account again. Only an explicit ready result
+clears the quota pause and restores the account's configured priority. Unknown or still
+limited results retain the pause, using the latest known reset deadline when available.
+Turn-state tokens keep an in-progress turn on its issuing account; after that response
+finishes, the next fresh prompt can use the restored priority.
+
 ### When a request moves
 
 The rules are adapted from prodex's runtime error policy:

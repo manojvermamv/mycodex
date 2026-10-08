@@ -150,6 +150,10 @@ Fresh model requests without a sticky turn token can prefer a healthier account 
 the current account's 5h headroom is below 5%. Recent usage snapshots are required.
 Eligible failures before response commitment retry another account in the same thread;
 failures after commitment are returned to Codex. Clearing a pause does not reset quota.
+When a saved quota reset date and time is due, the next fresh prompt checks that profile
+again. It regains its configured priority only when the service explicitly confirms it is
+ready. Unknown or still-limited results keep it paused. An in-progress turn stays with its
+current account; the next fresh prompt can use the restored priority.
 `rotation disable personal` excludes it as a switch target, but a proxy launched as that
 profile still includes its owner. The global switch applies to later terminal launches.
 
@@ -229,7 +233,11 @@ mycodex doctor --fix
 Common fixes:
 
 - `auth invalid` on an account: `mycodex profile reauth NAME`
-- an account still paused after its reset: `mycodex rotation reset NAME`
+- an account still paused after its reset: check the saved reset date and time in
+  `mycodex status` or `mycodex rotation status`. The next fresh prompt rechecks it after
+  that time; a live ready result restores its configured priority. If the service still
+  reports a limit or cannot confirm readiness, it stays paused. `mycodex rotation reset
+  NAME` clears the pause manually.
 - a thread with another provider: `mycodex threads adopt ID` creates an `openai` copy
 - an existing thread missing its project/loading: `mycodex threads link ID --project DIR`
 - phone shows no project: `mycodex projects add ~/your-project`, then link or seed
