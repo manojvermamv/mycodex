@@ -25,9 +25,9 @@ Once output has started streaming, everything passes through untouched. When eve
 account is exhausted Codex receives the backend's own usage-limit error, with the
 earliest reset time among the accounts tried.
 
-Affinity: a turn's sticky-routing token (x-codex-turn-state) stays with the account that
-issued it, a session (session-id / thread-id) stays on its account while that account
-works, and new sessions start on the current account (initially the launch profile).
+Affinity: active responses sharing a turn-state token keep their account until the last
+response finishes. Completed tokens retain issuer history only. Fresh model requests
+use configured order, or remaining quota with session/current affinity breaking ties.
 
 Only processes of the same Unix user may connect (checked against /proc/net/tcp).
 """
@@ -510,19 +510,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if verdict.rotates:
                     proxy.penalize(profile, verdict, response.status)
                     return Failure(verdict, response.status, response.reason, response.getheaders(), raw, profile.name)
-                issued_state = proxy.served(profile, session, turn_state, response)
+                lease = proxy.served(profile, session, turn_state, response)
                 try:
                     self._send_buffered(response.status, response.reason, response.getheaders(), raw)
                 finally:
-                    proxy.finish_turn(turn_state, issued_state)
+                    proxy.finish_turn(lease)
                 return None
             if "text/event-stream" in (response.getheader("Content-Type") or ""):
                 return self._stream(response, profile, session, turn_state)
-            issued_state = proxy.served(profile, session, turn_state, response)
+            lease = proxy.served(profile, session, turn_state, response)
             try:
                 self._forward_body(response)
             finally:
-                proxy.finish_turn(turn_state, issued_state)
+                proxy.finish_turn(lease)
             return None
 
     # -- responses -------------------------------------------------------------------------
@@ -558,7 +558,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             proxy.penalize(profile, verdict, response.status)
             return Failure(verdict, response.status, response.reason, response.getheaders(), buffer, profile.name)
 
-        issued_state = proxy.served(profile, session, turn_state, response)
+        lease = proxy.served(profile, session, turn_state, response)
         try:
             self._start_chunked(response.status, response.reason, response.getheaders())
             alive = self._chunk(buffer)
@@ -578,7 +578,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 response.close()
                 self.close_connection = True
         finally:
-            proxy.finish_turn(turn_state, issued_state)
+            proxy.finish_turn(lease)
         return None
 
     def _forward_body(self, response: http.client.HTTPResponse) -> None:
@@ -699,6 +699,11 @@ def _short(value: str | None) -> str | None:
 
 
 # ----------------------------------------------------------------------------- proxy
+@dataclass(eq=False)
+class _TurnLease:
+    tokens: tuple[str, ...]
+
+
 class RotationProxy:
     def __init__(self, owner: str, role: str = "session", echo: bool = False, upstream: str | None = None):
         self.owner = owner
@@ -709,6 +714,7 @@ class RotationProxy:
         self.sessions: dict[str, tuple[str, float]] = {}
         self.turns: dict[str, tuple[str, float]] = {}
         self.issued: dict[str, str] = {}
+        self._active_turns: dict[str, dict[_TurnLease, tuple[str, float]]] = {}
         self._pool: tuple[float, list[Profile], dict[str, Any]] | None = None
         self.started = time.time()
         self.requests = 0
@@ -772,13 +778,17 @@ class RotationProxy:
 
     def plan(self, turn_state: str | None, session: str | None, fresh_turn: bool = True) -> list[Profile]:
         members, cfg = self.pool()
+        with self.lock:
+            binding = self.turns.get(turn_state)
+            turn_owner = (binding[0] if binding and turn_state in self._active_turns
+                          else self._lookup(self.turns, turn_state))
         unconfirmed: set[str] = set()
-        if fresh_turn and not turn_state:
+        if fresh_turn and not turn_owner:
             unconfirmed = self._reconcile_due_quota_pauses(members)
         blocked = state.blocks()
         usable = [p for p in members if p.name not in blocked and p.name not in unconfirmed]
         threshold = cfg["rotation"].get("min_quota_headroom", 0)
-        if threshold and not turn_state and fresh_turn:
+        if threshold and not turn_owner and fresh_turn:
             # Refresh stale snapshots at a fresh-turn boundary, never during a sticky turn.
             stale = [p for p in usable if quota.cached(p.name, max_age=60) is None]
             quota.fetch_all(stale, timeout=3)
@@ -798,18 +808,16 @@ class RotationProxy:
             affinity_rank = 0 if p.name in (session_owner, current) else 1
             return (order_rank, -headroom, affinity_rank, p.name)
 
-        with self.lock:
-            turn_owner = self._lookup(self.turns, turn_state)
         by_name = {p.name: p for p in usable}
         result: list[Profile] = []
         if turn_owner in by_name:
             result.append(by_name[turn_owner])
-        elif not order:
+        elif not order and not fresh_turn:
             for name in (session_owner, current):
                 if name in by_name and by_name[name] not in result:
                     result.append(by_name[name])
         result += [p for p in sorted(usable, key=rank) if p not in result]
-        if not turn_state and threshold and fresh_turn and result:
+        if not turn_owner and threshold and fresh_turn and result:
             def headroom(p: Profile) -> float | None:
                 cached = quota.cached(p.name, max_age=300)
                 if not cached or not cached.ok:
@@ -892,7 +900,7 @@ class RotationProxy:
         return issuer in (None, name)
 
     def served(self, profile: Profile, session: str | None, turn_state: str | None,
-               response: http.client.HTTPResponse) -> str | None:
+               response: http.client.HTTPResponse) -> _TurnLease:
         now = time.time()
         with self.lock:
             self.requests += 1
@@ -903,27 +911,36 @@ class RotationProxy:
             issued = response.getheader("x-codex-turn-state")
             if issued:
                 self.issued[issued] = profile.name
-                self.turns[issued] = (profile.name, now)
-            if turn_state and turn_state not in self.turns:
-                self.turns[turn_state] = (profile.name, now)
+            lease = _TurnLease(tuple(dict.fromkeys(key for key in (turn_state, issued) if key)))
+            for key in lease.tokens:
+                self._active_turns.setdefault(key, {})[lease] = (profile.name, now)
+                self.turns[key] = (profile.name, now)
             if len(self.sessions) > MAX_BINDINGS or len(self.turns) > MAX_BINDINGS:
                 self._prune(now)
         if previous != profile.name:
             self.switches += 1
             self.log.write("switch", **{"from": previous, "to": profile.name, "session": _short(session)})
-        return issued
+        return lease
 
-    def finish_turn(self, turn_state: str | None, issued_state: str | None) -> None:
-        """Release completed request affinity while retaining token-origin history."""
+    def finish_turn(self, lease: _TurnLease) -> None:
+        """Release only this response's affinity; retain other responses and issuer history."""
         with self.lock:
-            for key in (turn_state, issued_state):
-                if key:
+            for key in lease.tokens:
+                owners = self._active_turns.get(key)
+                if not owners or lease not in owners:
+                    continue
+                del owners[lease]
+                if owners:
+                    self.turns[key] = next(reversed(owners.values()))
+                else:
+                    del self._active_turns[key]
                     self.turns.pop(key, None)
 
     def _prune(self, now: float) -> None:
         for table in (self.sessions, self.turns):
             for key in [k for k, (_, at) in table.items() if now - at > BINDING_TTL]:
-                del table[key]
+                if table is not self.turns or key not in self._active_turns:
+                    del table[key]
         if len(self.issued) > MAX_BINDINGS:
             for key in list(self.issued)[: len(self.issued) // 2]:
                 del self.issued[key]

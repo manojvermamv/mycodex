@@ -81,8 +81,9 @@ mycodex doctor --fix-rollout-paths    # backed-up path repair; no online usage c
 ```
 
 Sharing models copies only a validated cache and leaves pairing and service lifecycle
-intact. Later managed starts refresh the saved source; an optional copy failure warns
-and continues startup with the existing cache.
+intact. Without SOURCE it reuses the saved source, or the active profile if none is saved.
+An explicit SOURCE overrides it. Later managed starts refresh the saved source;
+an optional copy failure warns and continues startup with the existing cache.
 
 Starting/stopping/restarting a phone service can interrupt active work. Use the
 [redeployment guide](redeployment.md) to plan a host-side observer before replacing a

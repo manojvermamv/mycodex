@@ -206,8 +206,8 @@ were left in place; no real reset credit or model turn was used for these tests.
 
 The additions/fixes described above are now versioned as v0.3.0; see
 [CHANGELOG.md](../CHANGELOG.md). Historical version numbers and test counts describe
-their original discovery passes. The committed runner `tools/run_tests.py` now reproduces
-the 114 passing isolated regressions. The [public cheat sheet](cheatsheet.md) uses generic
+their original discovery passes. At that release, the committed runner `tools/run_tests.py`
+reproduced 114 passing isolated regressions. The [public cheat sheet](cheatsheet.md) uses generic
 account/folder examples. Personal host notes and temporary recovery scripts stay private.
 
 The corrected guarded deployment completed with the updated source and retained pairing;
@@ -217,10 +217,13 @@ publication changes metadata/docs and does not restart active sessions. R01/R06 
 
 ## v0.4.0 follow-up — 2026-10-08
 
-The current package has 29 modules and 132 isolated tests; the 81/114-test results above
+The current package has 29 modules and 143 isolated tests; the 81/114-test results above
 remain historical. Due persisted 5-hour/weekly resets now trigger checks at the next
 fresh request, restoring configured priority only on explicit readiness and preserving
-active response affinity. Relay model-cache sharing saves a Plus source for managed
+active response affinity until the last overlapping owner completes. Completed token
+headers still trigger fresh-request checks. Explicit order takes priority for fresh
+requests; without an order, quota ranks before session/current tie-breakers.
+Relay model-cache sharing saves a Plus source for managed
 starts and safely copies only its catalogue; invalid sources, unsafe paths, and deeply
 nested JSON fail readably. Optional startup cache failures warn and continue.
 

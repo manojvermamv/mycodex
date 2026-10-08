@@ -146,8 +146,10 @@ mycodex rotation auto-redeem off        # credits preserved by default
 mycodex quota redeem work               # explicitly consume an earned reset, if needed
 ```
 
-Fresh model requests without a sticky turn token can prefer a healthier account when
-the current account's 5h headroom is below 5%. Recent usage snapshots are required.
+Fresh model requests without an active turn binding follow configured account order,
+or remaining quota with session/current affinity breaking ties when no order is set.
+They can prefer a healthier account when the first candidate's 5h headroom is below 5%.
+Completed token headers use the same fresh-request checks. Recent usage snapshots are required.
 Eligible failures before response commitment retry another account in the same thread;
 failures after commitment are returned to Codex. Clearing a pause does not reset quota.
 When a persisted 5-hour or weekly quota reset date and time is due, the next fresh
@@ -307,7 +309,7 @@ rm -rf ~/mycodex
 ## v0.4.0 validation and deployment — 2026-10-08
 
 For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
-132 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
+143 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
 for v0.3.0; the v0.4.0 guarded restart is pending. This conversation runs in the relay
 cgroup. After release validation, an independent observer will be armed and wait for
 all active threads/tools to finish and ten seconds idle. See

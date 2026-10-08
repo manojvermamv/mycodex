@@ -513,6 +513,86 @@ class ProxyRotationTest(unittest.TestCase):
         self.assertNotIn("turn-acct-a", self.proxy.turns)
         self.assertEqual(self.proxy.issued["turn-acct-a"], "a")
 
+    def completed_backup_token(self):
+        cfg = self.proxy.pool()[1]
+        cfg['rotation']['order'] = ['b', 'a']
+        cfg['rotation']['min_quota_headroom'] = 0
+        response, _ = self.post()
+        token = response.getheader('x-codex-turn-state')
+        self.assertEqual(token, 'turn-acct-b')
+        self.await_completed_response(token)
+        cfg['rotation']['order'] = ['a', 'b']
+        FakeBackend.calls = []
+        return token
+
+    def await_completed_response(self, token):
+        deadline = time.monotonic() + 2
+        while token in self.proxy.turns and time.monotonic() < deadline:
+            time.sleep(0.001)
+        self.assertNotIn(token, self.proxy.turns)
+
+    def test_completed_header_triggers_ready_recheck_for_expired_or_future_pause(self):
+        from mycodex import state
+        token = self.completed_backup_token()
+        now = int(time.time())
+        for pause_until in (now - 1, now + 3600):
+            with self.subTest(pause_until=pause_until):
+                self.proxy.quota_checks.clear()
+                state.save_quota('a', quota.to_dict(quota.Quota('a', True, 'limited', windows=[
+                    quota.Window('5h', 18000, 100, now - 1)], usage_allowed=False)))
+                state.block('a', pause_until, 'quota: exhausted')
+                ready = quota.Quota('a', True, 'ready', windows=[
+                    quota.Window('5h', 18000, 0, now + 18000)], usage_allowed=True)
+                with mock.patch.object(quota, 'fetch', return_value=ready) as fetch:
+                    response, body = self.post(headers={'x-codex-turn-state': token})
+                self.await_completed_response(token)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(self.accounts()[-1], 'acct-a')
+                self.assertIn(b'hello from acct-a', body)
+                self.assertIsNone(FakeBackend.calls[-1][2])
+                fetch.assert_called_once()
+                self.assertNotIn('a', state.quota_pauses())
+
+    def test_completed_header_keeps_unknown_or_limited_reset_due_account_excluded(self):
+        from mycodex import state
+        token = self.completed_backup_token()
+        now = int(time.time())
+        for status in ('unknown', 'limited'):
+            with self.subTest(status=status):
+                self.proxy.quota_checks.clear()
+                state.save_quota('a', quota.to_dict(quota.Quota('a', True, 'limited', windows=[
+                    quota.Window('5h', 18000, 100, now - 1)], usage_allowed=False)))
+                state.block('a', now - 1, 'quota: exhausted')
+                checked = quota.Quota('a', status == 'limited', status, windows=[
+                    quota.Window('5h', 18000, 100, now + 3600)] if status == 'limited' else [],
+                    usage_allowed=False)
+                with mock.patch.object(quota, 'fetch', return_value=checked) as fetch:
+                    response, body = self.post(headers={'x-codex-turn-state': token})
+                self.await_completed_response(token)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(self.accounts()[-1], 'acct-b')
+                self.assertIn(b'hello from acct-b', body)
+                fetch.assert_called_once()
+                self.assertIn('a', state.quota_pauses())
+
+    def test_completed_header_refreshes_snapshots_and_runs_proactive_headroom_selection(self):
+        token = self.completed_backup_token()
+        cfg = self.proxy.pool()[1]
+        cfg['rotation']['min_quota_headroom'] = 5
+        def refresh(members, **kwargs):
+            from mycodex import state
+            for name, remaining in (('a', 2), ('b', 80)):
+                snapshot = quota.Quota(name, True, 'ready', windows=[
+                    quota.Window('5h', 18000, 100 - remaining, int(time.time()) + 3600)],
+                    fetched_at=time.time(), usage_allowed=True)
+                state.save_quota(name, quota.to_dict(snapshot))
+        with mock.patch.object(quota, 'fetch_all', side_effect=refresh) as fetch:
+            response, body = self.post(headers={'x-codex-turn-state': token})
+        self.assertEqual(response.status, 200)
+        self.assertIn(b'hello from acct-b', body)
+        fetch.assert_called_once()
+        self.assertEqual({p.name for p in fetch.call_args.args[0]}, {'a', 'b'})
+
     def test_websocket_upgrade_gets_426(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.proxy.port, timeout=10)
         conn.request("GET", "/backend-api/codex/responses", headers={"Upgrade": "websocket", "Connection": "Upgrade"})

@@ -4,7 +4,7 @@ This document explains how mycodex works internally and why each mechanism exist
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
 The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.0** on 2026-10-08 (29 package modules, 132 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+**v0.4.0** on 2026-10-08 (29 package modules, 143 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -131,29 +131,31 @@ are dropped.
 
 For each request the proxy builds a plan:
 
-1. the account that issued the request's `x-codex-turn-state` (Codex's sticky-routing token
-   for one turn);
-2. the account that last served the request's session (`session-id` / `thread-id`);
-3. the proxy's current account (initially the launch profile);
-4. other logged-in, unpaused candidates: first `rotation.order`, then cached headroom.
+1. an active response binding for the request's `x-codex-turn-state`;
+2. logged-in, unpaused candidates in `rotation.order`, when explicitly configured;
+3. otherwise, for fresh unbound model requests, remaining quota descending, with
+   session/current account affinity breaking ties (then profile name). Non-model
+   requests retain session/current preference when there is no explicit order.
 
 Candidates are not all proven ready: unknown quotas remain candidates for reactive
 fallback, and limited snapshots are ranked lower rather than universally excluded.
 
-For fresh model requests without a turn-state token, an account below the configured
-5-hour headroom threshold (default 5%) moves behind healthy alternatives. Stale quota
+For fresh model requests without an active binding, an account below the configured
+5-hour headroom threshold (default 5%) moves behind healthy alternatives. A completed
+turn-state header does not suppress this policy or reset-due live checks. Stale quota
 snapshots older than 60 seconds are refreshed at this boundary, using a 3-second usage
 HTTP timeout. Token-lock/refresh waits and batched accounts can take longer. A snapshot
-must be no older than 300 seconds for proactive headroom decisions. No request with a
-turn-state token is moved
-proactively. Optional `auto_redeem` spends an earned reset at an exhausted 5-hour window
-before fallback; it defaults to false. Redemption uses a temporary stdio app-server with
-externally managed ChatGPT tokens and a persistent idempotency key, then reads backend
-limits. It never changes the relay account or copies refresh tokens.
+must be no older than 300 seconds for proactive headroom decisions. Active bindings
+are not moved proactively. Optional `auto_redeem` spends an earned reset at an exhausted
+5-hour window before fallback; it defaults to false. Redemption uses a temporary stdio
+app-server with externally managed ChatGPT tokens and a persistent idempotency key,
+then reads backend limits. It never changes the relay account or copies refresh tokens.
 
 Excluded: accounts without a login, accounts in `rotation.disabled` (except the launch
 profile), and accounts paused in `state/accounts.json`. If everything is paused, the
-account whose pause ends first is asked anyway, so Codex receives a real answer.
+account whose pause ends first is asked anyway, except for reset-due accounts whose
+live recovery is still unconfirmed. If no candidate remains, the proxy returns a local
+no-account error.
 
 A quota pause is reconsidered only while planning a fresh model request and after its
 saved pause deadline or an exhausted window's saved reset time is due. The proxy reuses
@@ -161,8 +163,10 @@ the persisted 5-hour/weekly reset timestamps and pause deadline; status displays
 It checks current usage before ranking the account again. Only an explicit ready result
 clears the quota pause and restores the account's configured priority. Unknown or still
 limited results retain the pause, using the latest known reset deadline when available.
-Turn-state tokens keep an in-progress turn on its issuing account; after that response
-finishes, the next fresh prompt can use the restored priority.
+Each response owns one reference per distinct input/issued token. Overlapping responses
+retain their binding until the last owner finishes; an old completion cannot release a
+newer response's reference. Completed tokens retain issuer history, so known foreign
+tokens are stripped on another account. Their next fresh prompt can use restored priority.
 
 ### When a request moves
 
@@ -418,12 +422,13 @@ classification, launch and service command lines, the unit file, the error polic
 pre-commit scanning, shared-home linking and adoption, token refresh and reuse, and an
 end-to-end proxy run against a local fake backend: a usage limit moves the request to the
 next account, a failure inside the stream before output does too, a 401 refreshes once,
-exhausted accounts return the earliest reset, turn-state tokens stay with their issuer,
-and WebSocket upgrades get 426.
-The suite contains 132 tests across three files as of 2026-10-08 (the 2026-10-05
+exhausted accounts return the earliest reset, active turn-state bindings retain affinity,
+completed tokens keep issuer filtering, and WebSocket upgrades get 426.
+The suite contains 143 tests across three files as of 2026-10-08 (the 2026-10-05
 v0.3.0 suite had 114). New regressions cover reset-due priority restoration, active
-response affinity, model-cache copying and startup warnings, source/destination safety,
-and deeply nested JSON failures. Added workflow
+response affinity and overlapping ownership, completed-header recovery, no-order quota
+ranking, model-cache copying and startup warnings, source/destination safety, bounded
+FIFO rejection, and deeply nested JSON failures. Added workflow
 coverage includes pagination/ambiguity, link/hydration, guarded cleanup, exact completion
 matching, fresh/sticky headroom routing, reset retries/permission/account checks, and
 SQLite backups/active-lock handling. New boundary/CLI coverage checks empty and malformed
@@ -476,7 +481,7 @@ normal idle eviction was accepted during monitoring. The relay uses the working-
 launcher and keeps its account/pairing. Its supervisor and source matched the successful
 deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
 
-The 2026-10-08 v0.4.0 follow-up has 29 modules and 132 isolated tests. Its guarded
+The 2026-10-08 v0.4.0 follow-up has 29 modules and 143 isolated tests. Its guarded
 restart is pending: this conversation is in the relay cgroup. After release validation,
 an independent observer will be armed to wait for all active threads/tools and ten
 seconds idle. New invocations report 0.4.0; updating CLI/source alone does not reload

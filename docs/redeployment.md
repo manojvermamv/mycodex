@@ -146,7 +146,7 @@ publication leaves existing processes running with their loaded metadata.
 
 ## v0.4.0 handoff pending — 2026-10-08
 
-The current candidate contains 29 package modules and 132 isolated tests. The completed
+The current candidate contains 29 package modules and 143 isolated tests. The completed
 2026-10-05 deployment and 81/114-test evidence above belong to earlier snapshots.
 The v0.4.0 guarded restart has not completed: this conversation is in the relay cgroup.
 After release validation an independent observer will be armed, waiting for all active

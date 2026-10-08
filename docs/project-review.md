@@ -188,13 +188,14 @@ publication does not reload modules or restart the host service.
 
 ## v0.4.0 release follow-up — 2026-10-08
 
-The current package contains 29 modules and three test files (132 isolated tests).
+The current package contains 29 modules and three test files (143 isolated tests).
 The dated 26/28-module and 81/114-test counts above describe earlier reviews/releases.
 New coverage verifies quota-pause recovery at the next fresh request after persisted
 5-hour/weekly resets become due, configured priority restoration on explicit readiness,
-and active response affinity. Relay model-cache coverage checks saved sources, atomic
+completed-header live checks, overlapping response affinity, and no-order quota ranking.
+Relay model-cache coverage checks saved sources, atomic
 catalogue-only copying, source/destination safety, deeply nested JSON failures, and
-warning/continued startup on optional cache failure.
+bounded FIFO rejection and warning/continued startup on optional cache failure.
 
 The v0.4.0 guarded restart is pending. This conversation runs in the relay cgroup;
 after release validation an independent observer will be armed to wait for all active

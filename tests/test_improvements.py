@@ -2,8 +2,11 @@
 import contextlib
 import io
 import json
+import multiprocessing
+import os
 import sqlite3
 import time
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -192,7 +195,7 @@ class HeadroomTest(unittest.TestCase):
         self.box = Sandbox()
         for name in ['a', 'b']:
             write_auth(self.box.home(name), 'acct-' + name, name + '@example.com')
-        self.cfg = config._merge(config.DEFAULTS, {'active': 'a'})
+        self.cfg = config._merge(config.DEFAULTS, {'active': 'a', 'rotation': {'order': ['a', 'b']}})
         self.mock = mock.patch.object(config, 'load', return_value=self.cfg)
         self.mock.start()
         self.proxy = proxy.RotationProxy('a')
@@ -252,6 +255,24 @@ class HeadroomTest(unittest.TestCase):
     def test_no_5h_window_is_not_misclassified_as_low_5h(self):
         self.remember('a', 2, seconds=604800); self.remember('b', 100)
         self.assertEqual(self.proxy.plan(None, None)[0].name, 'a')
+
+    def test_fresh_unbound_request_ranks_remaining_quota_before_session_and_current(self):
+        self.cfg['rotation']['order'] = []
+        self.cfg['rotation']['min_quota_headroom'] = 0
+        self.remember('a', 90); self.remember('b', 20)
+        self.proxy.current = 'b'
+        self.proxy.sessions['session'] = ('b', time.time())
+        self.assertEqual([p.name for p in self.proxy.plan(None, 'session')], ['a', 'b'])
+
+    def test_equal_quota_uses_current_and_session_as_tie_breakers(self):
+        self.cfg['rotation']['order'] = []
+        self.cfg['rotation']['min_quota_headroom'] = 0
+        self.remember('a', 90); self.remember('b', 90)
+        self.proxy.current = 'b'
+        self.assertEqual([p.name for p in self.proxy.plan(None, None)], ['b', 'a'])
+        self.proxy.current = 'outside-pool'
+        self.proxy.sessions['session'] = ('b', time.time())
+        self.assertEqual([p.name for p in self.proxy.plan(None, 'session')], ['b', 'a'])
 
 
 class QuotaPriorityRecoveryTest(unittest.TestCase):
@@ -324,10 +345,9 @@ class QuotaPriorityRecoveryTest(unittest.TestCase):
         now = time.time()
         self.proxy.current = 'b'
         self.proxy.sessions['session'] = ('b', now)
-        self.proxy.turns['turn'] = ('b', now)
-        self.proxy.issued['turn'] = 'b'
+        lease = self.activate(None, 'turn')
 
-        self.proxy.finish_turn('turn', None)
+        self.proxy.finish_turn(lease)
 
         self.assertEqual(self.proxy.plan(None, 'session')[0].name, 'a')
         self.assertNotIn('turn', self.proxy.turns)
@@ -337,6 +357,56 @@ class QuotaPriorityRecoveryTest(unittest.TestCase):
         self.proxy.turns['turn'] = ('b', time.time())
 
         self.assertEqual(self.proxy.plan('turn', 'session')[0].name, 'b')
+
+    def activate(self, input_token, issued_token, name='b'):
+        profile = next(p for p in self.proxy.pool()[0] if p.name == name)
+        response = mock.Mock(getheader=lambda key: issued_token)
+        return self.proxy.served(profile, 'session', input_token, response)
+
+    def test_overlapping_identical_input_and_issued_token_stays_bound_until_last_completion(self):
+        first = self.activate('shared', 'shared')
+        second = self.activate('shared', 'shared')
+
+        self.proxy.finish_turn(first)
+
+        self.assertEqual(self.proxy.plan('shared', 'session')[0].name, 'b')
+        self.proxy.finish_turn(second)
+        self.assertEqual(self.proxy.plan('shared', 'session')[0].name, 'a')
+        self.assertEqual(self.proxy.issued['shared'], 'b')
+
+    def test_overlapping_distinct_issued_tokens_release_only_their_request_references(self):
+        first = self.activate('shared', 'first')
+        second = self.activate('shared', 'second')
+
+        self.proxy.finish_turn(first)
+
+        self.assertEqual(self.proxy.plan('shared', 'session')[0].name, 'b')
+        self.assertEqual(self.proxy.plan('second', 'session')[0].name, 'b')
+        self.assertEqual(self.proxy.plan('first', 'session')[0].name, 'a')
+        self.proxy.finish_turn(second)
+        self.assertNotIn('shared', self.proxy.turns)
+        self.assertNotIn('second', self.proxy.turns)
+        self.assertEqual(self.proxy.issued, {'first': 'b', 'second': 'b'})
+
+    def test_old_completion_does_not_release_newer_account_reference_for_reused_token(self):
+        first = self.activate('shared', 'shared', 'a')
+        second = self.activate('shared', 'shared', 'b')
+
+        self.proxy.finish_turn(first)
+
+        self.assertEqual(self.proxy.plan('shared', 'session')[0].name, 'b')
+        self.proxy.finish_turn(second)
+        self.assertNotIn('shared', self.proxy.turns)
+        self.assertEqual(self.proxy.issued['shared'], 'b')
+
+    def test_active_response_affinity_survives_binding_history_expiry(self):
+        lease = self.activate('shared', 'shared')
+        later = time.time() + proxy.BINDING_TTL + 1
+        self.proxy._prune(later)
+        with mock.patch.object(proxy.time, 'time', return_value=later):
+            self.assertEqual(self.proxy.plan('shared', 'session')[0].name, 'b')
+        self.proxy.finish_turn(lease)
+        self.assertNotIn('shared', self.proxy.turns)
 
     def test_non_quota_pause_is_not_cleared_by_quota_recheck(self):
         state.block('a', time.time() + 300, 'auth: invalid')
@@ -664,6 +734,87 @@ class ModelCacheShareTest(unittest.TestCase):
         lifecycle.assert_not_called()
         self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
         self.assertIn('model cache sync failed; continuing', err.getvalue())
+
+    def bounded_cache_action(self, action):
+        context = multiprocessing.get_context('fork')
+        receive, send = context.Pipe(duplex=False)
+        def worker():
+            receive.close()
+            # A blocking-open regression must not leak a worker, even when os.kill is blocked.
+            watchdog = threading.Timer(3, lambda: os._exit(2))
+            watchdog.daemon = True
+            watchdog.start()
+            try:
+                send.send(('ok', action()))
+            except BaseException as exc:
+                send.send(('error', repr(exc)))
+            finally:
+                watchdog.cancel()
+                send.close()
+        process = context.Process(target=worker)
+        process.start()
+        send.close()
+        try:
+            self.assertTrue(receive.poll(2), 'optional FIFO cache sync blocked before rejecting the source')
+            status, result = receive.recv()
+            self.assertEqual(status, 'ok', result)
+            return result
+        finally:
+            process.join(timeout=4)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=2)
+            receive.close()
+            self.assertFalse(process.is_alive(), 'FIFO regression worker did not stop')
+            process.close()
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and 'fork' in multiprocessing.get_all_start_methods(), 'needs FIFO and fork')
+    def test_manual_fifo_cache_failure_is_bounded_and_preserves_cache_and_settings(self):
+        os.mkfifo(self.source_home / 'models_cache.json')
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        self.cfg['remote']['models_source'] = 'plus'
+        original = json.loads(json.dumps(self.cfg))
+
+        def share():
+            with mock.patch.object(config, 'load', return_value=self.cfg), \
+                 mock.patch.object(config, 'editing', self.editing), \
+                 contextlib.redirect_stderr(io.StringIO()) as err:
+                result = remote_cmd.share_models(None)
+            return result, self.cfg, err.getvalue()
+
+        result, settings, warning = self.bounded_cache_action(share)
+        self.assertEqual(result, 1)
+        self.assertEqual(settings, original)
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+        self.assertIn('model cache', warning)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and 'fork' in multiprocessing.get_all_start_methods(), 'needs FIFO and fork')
+    def test_automatic_fifo_cache_failure_warns_and_reaches_launch_without_writer(self):
+        write_auth(self.source_home, 'plus-account', 'plus@example.com')
+        write_auth(self.target_home, 'relay-account', 'relay@example.com')
+        os.mkfifo(self.source_home / 'models_cache.json')
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        self.cfg['remote']['models_source'] = 'plus'
+
+        def start():
+            launched = []
+            def run_server(profile, mode, cfg, service):
+                launched.append((profile.name, service))
+                return 17
+            with mock.patch.object(config, 'load', return_value=self.cfg), \
+                 mock.patch.object(remote, 'run_server', side_effect=run_server), \
+                 mock.patch.object(remote, '_systemctl', side_effect=AssertionError('service lifecycle forbidden')), \
+                 contextlib.redirect_stderr(io.StringIO()) as err:
+                result = remote.serve()
+            return result, launched, err.getvalue()
+
+        result, launched, warning = self.bounded_cache_action(start)
+        self.assertEqual(result, 17)
+        self.assertEqual(launched, [('relay', True)])
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+        self.assertIn('model cache sync failed; continuing', warning)
 
     def test_remote_start_continues_when_deeply_nested_cache_json_fails(self):
         write_auth(self.source_home, 'plus-account', 'plus@example.com')

@@ -17,7 +17,7 @@ version remained `0.2.0` and the additions were unreleased. See the dated public
 | Earned-reset consumption missing | Confirmed in CLI and installed protocol. Added account-specific `quota redeem`; no real credit was consumed during verification. Outcomes are handled explicitly and limits are read again before clearing quota pauses. |
 | Project list/add missing | Confirmed. Added paginated project inspection and idempotent folder registration without a dummy thread. Counts cover non-archived threads across all providers/sources. |
 | Legacy rollout references | Confirmed: four legacy references in one shared database, not independent per-profile copies. All four had matching replacement rollouts, including one archived rollout. Added guarded repair with SQLite backup and compare-and-update. Orphans and ambiguous paths are preserved and reported. |
-| Proactive quota routing missing | Confirmed: the old proxy ranked fallback accounts but retained the current account until rejection. Added a configurable 5% default threshold for fresh model requests without a turn-state token, refreshing stale snapshots. Sticky turns and reactive fallbacks are retained. |
+| Proactive quota routing missing | Confirmed: the old proxy ranked fallback accounts but retained the current account until rejection. Added a configurable 5% default threshold for fresh model requests without an active turn binding, refreshing stale snapshots. Sticky turns and reactive fallbacks are retained. |
 | Relay failover default off | Confirmed as a setting, rather than an observed outage. `remote start` defaults to failover on; `remote restart` preserves the saved choice and `--no-failover` opts out. Changing the relay account still requires the phone to sign in to that account. |
 | UUID/profile shortcuts missing | Added full-UUID resume shorthand and top-level `use`. |
 | Project cleanup missing | Added preview/confirmation and API archival only for verified empty or untouched built-in ready-check histories; active work and descendants are preserved. |
@@ -125,13 +125,17 @@ docs does not restart or reload the running relay. R01/R06 stay open in the revi
 The quota-pause priority correction belongs to v0.4.0. Persisted 5-hour/weekly reset
 times or pause deadlines trigger live checks at the next fresh request when due.
 Explicit readiness restores configured account priority; unknown/still-limited checks
-keep the pause. Active responses and turn-state tokens retain account affinity.
+keep the pause even when a completed token header accompanies the next fresh request.
+Active responses sharing tokens retain affinity until their final owner finishes;
+completed tokens preserve issuer history only. Fresh requests follow explicit order,
+or remaining quota with session/current affinity breaking ties when no order is set.
 `remote models share [SOURCE]` copies a validated Plus catalogue into the configured
 relay, saves the source, and refreshes it before later managed starts. Safe source and
 destination checks and readable deeply nested JSON failures preserve other account data;
-optional startup failures warn and continue with the existing relay cache.
+optional startup failures, including nonblocking rejection of FIFO sources, warn and
+continue with the existing relay cache.
 
-The package now has 29 modules and 132 isolated tests. The guarded restart is pending:
+The package now has 29 modules and 143 isolated tests. The guarded restart is pending:
 this conversation runs in the relay cgroup. After release validation an independent
 observer will be armed to wait for all active threads/tools and ten seconds idle.
 Updating CLI/source alone does not reload the proxy. R01/R06 and the other documented

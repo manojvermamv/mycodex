@@ -397,9 +397,11 @@ operation, not a status check.
 
 `mycodex remote models share [SOURCE]` copies a selected Plus profile's model catalogue
 into the configured relay profile immediately and saves it as the source for later managed
-service starts. The command does not stop, restart, or re-pair the phone service. Before
-each later managed server launch, mycodex refreshes that same cache; if the optional copy
-cannot run, it logs a warning and starts the phone relay with its existing cache.
+service starts. Without SOURCE it reuses the saved source, falling back to the active
+profile only when none is saved; an explicit SOURCE overrides it. The command does not
+stop, restart, or re-pair the phone service. Before each later managed server launch,
+mycodex refreshes that same cache; if the optional copy cannot run, it logs a warning
+and starts the phone relay with its existing cache.
 
 </details>
 
@@ -505,8 +507,9 @@ in [docs/projects-and-threads.md](docs/projects-and-threads.md).
 ## Rotation
 
 - **Fresh-turn headroom**: the default threshold is 5% on the 5-hour window. A fresh
-  model request without a turn-state token prefers a healthy alternative when the
-  current account is below it. Quota snapshots older than 60 seconds are refreshed
+  model request without an active turn binding prefers a healthy alternative when the
+  first ranked account is below it. Completed token headers also use this fresh-request
+  policy. Quota snapshots older than 60 seconds are refreshed
   with a 3-second usage HTTP timeout; token refresh/lock waits can take longer. Unknown
   quotas retain reactive fallback behavior.
   Existing sticky turns retain account affinity; this cannot guarantee that a long
@@ -517,9 +520,11 @@ in [docs/projects-and-threads.md](docs/projects-and-threads.md).
   redemption is off by default; `rotation auto-redeem on` enables it for exhausted
   5-hour windows with a credit, before fallback to another account. Credits are
   preserved when another quota window is also exhausted.
-- **Per request**: the launch profile is initially preferred, subject to pauses and
-  proactive routing. When the backend answers with a usage
-  limit, a rate limit or a deactivated workspace before any output, the request is sent
+- **Per request**: an active turn binding takes priority. Fresh unbound model requests
+  follow `rotation order`; without an explicit order, the account with the most remaining
+  quota goes first, with session/current account affinity used only to break ties.
+  Proactive headroom routing can prefer a healthy alternative. When the backend answers
+  with a usage limit, a rate limit or a deactivated workspace before any output, the request is sent
   again with the next ready account and the exhausted account is paused until its reset.
   At the saved reset date and time, the next fresh prompt checks the paused account again.
   A live response must explicitly confirm readiness before its configured priority is
@@ -529,9 +534,12 @@ in [docs/projects-and-threads.md](docs/projects-and-threads.md).
   Its four-second/256 KiB buffering limit can cause commitment before visible answer text.
   When every account is exhausted, Codex shows the usage-limit message with the earliest
   reset time.
-- **Stickiness**: a session stays on the account that served it while that account works,
-  subject to fresh-request headroom policy. Tokens with a known issuer are stripped when
-  retrying a different account; unknown tokens cannot be attributed with that certainty.
+- **Stickiness**: overlapping responses sharing a token retain their active binding until
+  the last response finishes. Completed tokens keep issuer history, and their next fresh
+  request uses the current account policy and any due live quota check. Tokens with a known
+  issuer are stripped when trying a different account; unknown tokens cannot be attributed
+  with that certainty. If every account is paused, the earliest pause is tried except for
+  reset-due accounts whose recovery is still unconfirmed.
 - **Your policy applies in the session**: `rotation order` sets which account is tried next,
   `rotation disable NAME` excludes switch targets (the launch owner remains eligible),
   and `rotation disable` disables proxies for subsequent terminal launches.
@@ -655,9 +663,10 @@ mycodex is an independent project and is not affiliated with OpenAI.
 
 ## Release verification
 
-Run `python3 -B tools/run_tests.py` from a clone to execute the 132-test suite in
-temporary homes with external HTTP, child processes, and signals blocked. The tests
-use local fake backends; they do not consume real reset credits or operate live services.
+Run `python3 -B tools/run_tests.py` from a clone to execute the 143-test suite in
+temporary homes with external HTTP, external subprocess launches, and service signals
+blocked. FIFO regressions use bounded fixture workers; local fake backends handle requests.
+The tests do not consume real reset credits or operate live services.
 
 The 2026-10-05 host deployment completed successfully and retained its phone identity,
 pairing, and conversation projects. Its corrected temporary observer passed two-minute

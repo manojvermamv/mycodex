@@ -7,7 +7,10 @@
 - Quota-paused accounts are checked again at the next fresh model-request boundary
   when their persisted 5-hour/weekly reset time or pause deadline is due. Explicit
   readiness restores configured account priority; unknown or still-limited results
-  retain the pause. Active responses and turn-state tokens keep account affinity.
+  retain the pause, including when a fresh request carries a completed turn-state header.
+  Overlapping responses sharing a token retain affinity until the last response finishes;
+  completed tokens preserve issuer history. Fresh unbound requests follow explicit order,
+  or remaining quota with session/current affinity breaking ties when no order is set.
 - `mycodex remote models share [SOURCE]` copies a selected Plus model catalogue to the
   configured phone relay without restarting it or changing pairing. The saved source is
   refreshed before later managed relay starts; an optional-cache failure warns and leaves
@@ -16,6 +19,7 @@
   destinations, and replaces only `models_cache.json` atomically with private file
   permissions. Login, installation identity, and other account data are preserved.
   Malformed or deeply nested JSON produces a readable failure rather than a traceback.
+  Non-regular sources, including FIFOs, are rejected without blocking optional startup.
 
 ### Upgrade behavior and validation
 
@@ -23,8 +27,9 @@
   proxy. The 2026-10-08 guarded host restart is pending. After release validation, an
   independent observer will wait for all active threads/tools to finish and ten seconds
   idle before acting. See the [redeployment guide](docs/redeployment.md).
-- The package contains 29 modules; 132 isolated tests pass with external HTTP, child
-  processes, and signals blocked. Generated help and public documentation links are checked.
+- The package contains 29 modules; 143 isolated tests pass with external HTTP, external
+  subprocess launches, and service signals blocked. Generated help and public documentation
+  links are checked.
 - Existing R01/R06 service lifecycle defects and the other limitations in the
   [project review](docs/project-review.md) remain open. Real reset spending, phone
   rendering, and full concurrency/recovery behavior are not established by these tests.

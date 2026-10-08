@@ -25,7 +25,7 @@ def _snapshot(source: Path) -> bytes:
     if source.is_symlink():
         raise ModelCacheError("the selected model cache must not be a symbolic link")
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         with os.fdopen(os.open(source, flags), "rb") as handle:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
                 raise OSError("model cache is not a regular file")
