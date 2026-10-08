@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.4.0**, dated 2026-10-08.
+This guide targets **v0.4.1**, dated 2026-10-08.
 The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
 for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
 
@@ -310,14 +310,18 @@ rm -rf ~/mycodex
 - [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
 - [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
 
-## v0.4.0 validation and deployment — 2026-10-08
+## v0.4.1 validation and deployment — 2026-10-08
 
 For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
-143 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
-for v0.3.0; the v0.4.0 guarded restart is pending. This conversation runs in the relay
-cgroup. An independent observer is armed and waiting for all active threads/tools to
-finish and ten seconds idle. See
-[redeployment.md](docs/redeployment.md) for the procedure and its limits.
+145 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
+for v0.3.0; the earlier v0.4.0 waiting job was cancelled before restarting.
 
-New CLI commands report v0.4.0. Updating source alone does not reload the running proxy;
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](docs/redeployment.md).
+<!-- mycodex-deployment-status:end -->
+
+New CLI commands report v0.4.1. Updating source alone does not reload the running proxy;
 already-running processes retain their loaded modules until a guarded restart.

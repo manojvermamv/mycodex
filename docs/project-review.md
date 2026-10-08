@@ -203,8 +203,13 @@ reasoning settings forwarded unchanged for separate conversations during rotatio
 Both checks detect an injected model override in isolated tests. This follow-up changes
 tests and documentation only.
 
-The v0.4.0 guarded restart is pending. This conversation runs in the relay cgroup;
-an independent observer is armed and waiting for all active
-threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
-running proxy. No new deployment success is claimed. R01/R06 and every other finding
-still marked open remain unresolved; see [redeployment.md](redeployment.md).
+The v0.4.0 waiting job was cancelled before restarting and superseded by v0.4.1.
+Updating CLI/source alone does not reload the running proxy. R01/R06 and every other
+finding still marked open remain unresolved.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](redeployment.md).
+<!-- mycodex-deployment-status:end -->

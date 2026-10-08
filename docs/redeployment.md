@@ -144,14 +144,13 @@ The observer implementation/tests/snapshots remain private host runtime artifact
 clones receive this guide, not a built-in deployment observer command. Version metadata
 publication leaves existing processes running with their loaded metadata.
 
-## v0.4.0 handoff pending — 2026-10-08
+## v0.4.0 handoff superseded — 2026-10-08
 
-The current candidate contains 29 package modules and 145 isolated tests. The completed
+The v0.4.0 candidate contained 29 package modules and 145 isolated tests. The completed
 2026-10-05 deployment and 81/114-test evidence above belong to earlier snapshots.
-The v0.4.0 guarded restart has not completed: this conversation is in the relay cgroup.
-An independent observer is armed, waiting for all active
-threads/tools to finish and ten seconds idle before restarting. New work resets the
-idle window; the observer must remain outside the relay cgroup.
+The v0.4.0 observer waited for active threads/tools and ten seconds idle. It was
+cancelled before restarting when the user requested the v0.4.1 release. The original
+relay stayed connected. This job did not deploy or roll back the service.
 
 Updating the CLI/source alone does not reload the running proxy. The observer must
 validate the candidate and recovery snapshot before acting, then verify relay/proxy
@@ -166,12 +165,41 @@ the relay. Candidate and recovery hashes were verified again when arming. The li
 model-cache copy matched the Plus source without changing the relay PID, credentials,
 installation/environment identity, or paired client. The PATH CLI reports 0.4.0.
 
-The current job's unit name and private status path are supplied in the deployment
+Each job's unit name and private status path are supplied in its deployment
 handoff. Its `waiting_for_idle` phase means the restart has not occurred. Keep this
 distinct from `completed` with `outcome: deployed`, which requires the reconnect and
 two-minute health checks above.
 
-The subsequent model-choice audit adds two isolated regressions and documentation only.
-It leaves the candidate's application files and the armed observer's source hashes
-unchanged. Cache sharing preserves model defaults and saved thread choices; account
+The subsequent model-choice audit added two isolated regressions and documentation only.
+It left the v0.4.0 application files and source hashes unchanged. Cache sharing preserves
+model defaults and saved thread choices; account
 rotation preserves each requested model and reasoning settings.
+
+## v0.4.1 deployment and publication — 2026-10-08
+
+The replacement candidate includes 29 modules, 145 isolated application tests and updated
+public docs/help. It uses the unchanged corrected observer and a frozen v0.3.0 recovery
+copy. A separate temporary publication service waits for `completed` / `deployed` and
+rechecks live relay/proxy health, identity, pairing, projects, protected processes, source
+hashes, Git state and publication exclusions. Recovery, cancellation, changed source or
+changed Git state stops publication. Both services run outside the relay cgroup.
+
+After successful deployment, the publication service replaces the pending records in
+the public docs with the confirmed UTC result, commits and pushes that documentation,
+pushes an annotated v0.4.1 tag, and creates the GitHub release. Bounded retries handle
+temporary publication failures; durable status records the commit, tag and release URL.
+These private one-job scripts are excluded from the repository and release archive.
+They do not change the documented R01/R06 limitations of ordinary CLI lifecycle commands.
+
+Thirteen isolated publication checks cover completion/recovery gates, damaged records,
+documentation marker safety, publication exclusions, live/source guards, the full
+commit/tag/release sequence and a failed-publication retry. Git flow tests use temporary
+repositories; GitHub and host service actions are blocked. The unchanged deployment
+observer retains its 22 mocked regressions.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. Inspect the supplied private status files.
+<!-- mycodex-deployment-status:end -->

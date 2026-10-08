@@ -141,9 +141,15 @@ unchanged across account rotation. Two isolated regressions cover separate conve
 using different models and unchanged settings/history after a catalogue copy. No runtime
 model override was found or introduced.
 
-The package now has 29 modules and 145 isolated tests. The guarded restart is pending:
-this conversation runs in the relay cgroup. An independent observer is armed and waiting
-for all active threads/tools and ten seconds idle. The live cache copy retained the relay
-PID, credentials, installation/environment identity, and paired client.
-Updating CLI/source alone does not reload the proxy. R01/R06 and the other documented
-open issues remain. See the [redeployment guide](redeployment.md).
+The package now has 29 modules and 145 isolated tests. The live cache copy retained the
+relay PID, credentials, installation/environment identity, and paired client. The earlier
+v0.4.0 waiting job was cancelled before restarting and superseded by v0.4.1.
+Updating source alone does not reload the proxy. R01/R06 and the other documented issues
+remain open.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](redeployment.md).
+<!-- mycodex-deployment-status:end -->

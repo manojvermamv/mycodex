@@ -1,7 +1,7 @@
 # Command and option guide
 
 Use this guide to choose a command and understand every mycodex option.
-This guide targets mycodex v0.4.0; see the [changelog](../CHANGELOG.md) and
+This guide targets mycodex v0.4.1; see the [changelog](../CHANGELOG.md) and
 [everyday commands](cheatsheet.md).
 
 Command names and flags stay compatible. A saved account is called a **profile**
@@ -431,7 +431,7 @@ mycodex remote [status] [--json]
 
 ## remote models share
 
-Copy one Plus account's model catalogue into the configured phone account without restarting or changing pairing. Saves that source so later managed phone-service starts refresh it before the server launches; a refresh warning never keeps the phone offline.
+Copy one Plus account's model catalogue into the configured phone account without restarting or changing pairing. You still choose the model for each conversation; your model defaults and saved thread choices stay intact. Saves that source so later managed phone-service starts refresh it before the server launches; a refresh warning never keeps the phone offline.
 
 ```text
 mycodex remote models share [SOURCE]

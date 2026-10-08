@@ -6,6 +6,11 @@ command or through the app-server proxy path for your own scripts.
 Reviewed on 2026-10-04. See [project-review.md](project-review.md) for current lookup,
 partial-operation, and concurrency limits.
 
+Model selection remains user controlled for each conversation. Sharing the relay's
+model catalogue and switching accounts preserve selected models and reasoning settings;
+they do not apply one model to every project thread. See the [command guide](cli-guide.md)
+and [v0.4.1 changes](../CHANGELOG.md).
+
 ## How Codex files threads under projects
 
 - A project is created only through Codex's app-server API (`project/create`); there is no

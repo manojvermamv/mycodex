@@ -4,7 +4,7 @@ This document explains how mycodex works internally and why each mechanism exist
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
 The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.0** on 2026-10-08 (29 package modules, 143 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+**v0.4.1** on 2026-10-08 (29 package modules, 145 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -477,7 +477,7 @@ part of source/help updates.
 
 ## Published release and host verification
 
-[Changelog](../CHANGELOG.md) records v0.4.0 behavior and compatibility changes.
+[Changelog](../CHANGELOG.md) records v0.4.1 verification and the v0.4.0 behavior changes.
 The test runner is committed at `tools/run_tests.py`; deployment observer scripts and
 artifacts remain private runtime files. They are described in
 [redeployment.md](redeployment.md), not exposed as a new CLI lifecycle guarantee.
@@ -488,8 +488,13 @@ launcher and keeps its account/pairing. Its supervisor and source matched the su
 deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
 
 The 2026-10-08 v0.4.0 release was verified with 29 modules and 143 isolated tests;
-the subsequent model-choice audit brings the suite to 145 tests. Its guarded
-restart is pending: this conversation is in the relay cgroup. An independent observer
-is armed and waiting for all active threads/tools and ten seconds idle. New invocations
-report 0.4.0; updating CLI/source alone does not reload
-the running proxy.
+the subsequent model-choice audit brings the suite to 145 tests. Its waiting deployment
+job was cancelled before restarting and superseded by v0.4.1. New invocations report
+0.4.1; updating source alone does not reload the running proxy.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](redeployment.md).
+<!-- mycodex-deployment-status:end -->

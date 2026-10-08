@@ -232,8 +232,13 @@ configured defaults and saved thread settings; routing preserves the selected mo
 reasoning settings in each request. The follow-up adds two regressions without changing
 runtime behavior.
 
-The v0.4.0 guarded restart is pending. This conversation is in the relay cgroup; an
-independent observer is armed and waiting for all active
-threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
-running proxy. The [redeployment guide](redeployment.md) describes the handoff, and
-R01/R06 plus the other open review items remain unresolved.
+The v0.4.0 waiting deployment job was cancelled before restarting and superseded by
+the v0.4.1 deployment/publication handoff. Updating CLI/source alone does not reload
+the running proxy. R01/R06 and the other open review items remain unresolved.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](redeployment.md).
+<!-- mycodex-deployment-status:end -->

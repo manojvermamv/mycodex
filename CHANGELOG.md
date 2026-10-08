@@ -1,11 +1,22 @@
 # Changelog
 
-## Unreleased
+## v0.4.1 — 2026-10-08
 
 - Clarified that relay cache sharing preserves user model defaults and saved thread
   choices. Account rotation forwards each thread's requested model and reasoning settings
   unchanged. Two additional isolated regressions verify these guarantees; 145 tests pass.
-  This follow-up changes tests and documentation without changing runtime behavior.
+  This patch updates version metadata, help wording, tests, and documentation while preserving the
+  v0.4.0 application behavior.
+- The earlier waiting deployment job was cancelled before restarting. The replacement
+  handoff includes independent recovery and final deployment verification before
+  documentation, commit/tag push, and GitHub publication are completed automatically.
+
+<!-- mycodex-deployment-status:start -->
+The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
+services wait for all active threads/tools and ten seconds idle, verify the reconnect
+and two-minute health monitor, then update these records and publish the release.
+Recovery or cancellation prevents publication. See the [redeployment guide](docs/redeployment.md).
+<!-- mycodex-deployment-status:end -->
 
 ## v0.4.0 — 2026-10-08
 
@@ -30,10 +41,9 @@
 
 ### Upgrade behavior and validation
 
-- New CLI invocations load v0.4.0; updating source alone does not reload the running
-  proxy. The 2026-10-08 guarded host restart is pending. An independent observer is
-  armed and waiting for all active threads/tools to finish and ten seconds idle before
-  acting. See the [redeployment guide](docs/redeployment.md).
+- At v0.4.0 publication, new CLI invocations loaded 0.4.0 while the running proxy
+  awaited a guarded restart. That waiting job was later cancelled before restarting
+  and superseded by the v0.4.1 handoff. See the [redeployment guide](docs/redeployment.md).
 - The package contains 29 modules; 143 isolated tests pass with external HTTP, external
   subprocess launches, and service signals blocked. Generated help and public documentation
   links are checked.
