@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -21,8 +22,14 @@ def _invalid_constant(value: str) -> None:
 
 
 def _snapshot(source: Path) -> bytes:
+    if source.is_symlink():
+        raise ModelCacheError("the selected model cache must not be a symbolic link")
     try:
-        data = source.read_bytes()
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(source, flags), "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise OSError("model cache is not a regular file")
+            data = handle.read()
         json.loads(data.decode("utf-8"), parse_constant=_invalid_constant)
     except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise ModelCacheError("the selected profile has no readable valid model cache") from exc

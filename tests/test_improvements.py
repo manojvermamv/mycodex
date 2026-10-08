@@ -604,6 +604,18 @@ class ModelCacheShareTest(unittest.TestCase):
 
         self.assertEqual(outside.read_text(), '{"models":["outside"]}')
 
+    def test_model_cache_share_rejects_source_symlink_to_profile_data(self):
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        unrelated = self.source_home / 'auth.json'
+        unrelated.write_text('{"unrelated":true}')
+        (self.source_home / 'models_cache.json').symlink_to(unrelated)
+
+        with self.assertRaises(model_cache.ModelCacheError):
+            model_cache.sync(self.source, self.target)
+
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+
     def test_model_cache_same_source_and_target_is_a_noop(self):
         cache = self.source_home / 'models_cache.json'
         cache.write_text('{"models":["same"]}')
