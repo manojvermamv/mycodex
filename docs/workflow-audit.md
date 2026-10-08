@@ -148,8 +148,11 @@ Updating source alone does not reload the proxy. R01/R06 and the other documente
 remain open.
 
 <!-- mycodex-deployment-status:start -->
-The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
-services wait for all active threads/tools and ten seconds idle, verify the reconnect
-and two-minute health monitor, then update these records and publish the release.
-Recovery or cancellation prevents publication. See the [redeployment guide](redeployment.md).
+The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
+and 0 rollback attempts. The independent observer finished its
+two-minute health monitor. Fresh checks confirmed the connected relay, control
+socket and proxy, retained phone identity/pairing and conversation projects, and
+preserved independent Codex processes. The service uses the verified v0.4.1
+working-tree launcher; 145 isolated application tests pass. User model choices
+remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->

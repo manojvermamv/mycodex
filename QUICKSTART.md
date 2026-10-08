@@ -317,10 +317,13 @@ For local regression checks, run `python3 -B tools/run_tests.py`; the suite cont
 for v0.3.0; the earlier v0.4.0 waiting job was cancelled before restarting.
 
 <!-- mycodex-deployment-status:start -->
-The v0.4.1 host restart and final GitHub publication are pending. Independent temporary
-services wait for all active threads/tools and ten seconds idle, verify the reconnect
-and two-minute health monitor, then update these records and publish the release.
-Recovery or cancellation prevents publication. See the [redeployment guide](docs/redeployment.md).
+The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
+and 0 rollback attempts. The independent observer finished its
+two-minute health monitor. Fresh checks confirmed the connected relay, control
+socket and proxy, retained phone identity/pairing and conversation projects, and
+preserved independent Codex processes. The service uses the verified v0.4.1
+working-tree launcher; 145 isolated application tests pass. User model choices
+remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
 
 New CLI commands report v0.4.1. Updating source alone does not reload the running proxy;
