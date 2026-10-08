@@ -507,6 +507,12 @@ class ProxyRotationTest(unittest.TestCase):
         self.assertEqual(FakeBackend.calls[0][2], "turn-acct-a")
         self.assertIsNone(FakeBackend.calls[1][2])         # another account never sees a's routing token
 
+    def test_completed_response_releases_turn_affinity_but_keeps_token_origin(self):
+        self.post()
+
+        self.assertNotIn("turn-acct-a", self.proxy.turns)
+        self.assertEqual(self.proxy.issued["turn-acct-a"], "a")
+
     def test_websocket_upgrade_gets_426(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.proxy.port, timeout=10)
         conn.request("GET", "/backend-api/codex/responses", headers={"Upgrade": "websocket", "Connection": "Upgrade"})

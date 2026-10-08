@@ -232,3 +232,14 @@ def cached(name: str, max_age: float = 900) -> Quota | None:
         return from_dict(snapshot)
     except (TypeError, ValueError):
         return None
+
+
+def stored(name: str) -> Quota | None:
+    """Return the latest saved usage snapshot, regardless of its age."""
+    snapshot = state.load(2.0)["profiles"].get(name, {}).get("quota")
+    if not isinstance(snapshot, dict):
+        return None
+    try:
+        return from_dict(snapshot)
+    except (TypeError, ValueError):
+        return None

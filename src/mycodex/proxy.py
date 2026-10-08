@@ -70,6 +70,7 @@ READ_TIMEOUT = 900          # Codex enforces its own stream idle timeout; this o
 POOL_TTL = 20
 BINDING_TTL = 6 * 3600
 MAX_BINDINGS = 4000
+QUOTA_RECHECK_DELAY = 60
 
 QUOTA_CODES = frozenset({
     "insufficient_quota", "credit_balance_exhausted", "organization_spend_limit_exceeded",
@@ -509,13 +510,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if verdict.rotates:
                     proxy.penalize(profile, verdict, response.status)
                     return Failure(verdict, response.status, response.reason, response.getheaders(), raw, profile.name)
-                self._send_buffered(response.status, response.reason, response.getheaders(), raw)
-                proxy.served(profile, session, turn_state, response)
+                issued_state = proxy.served(profile, session, turn_state, response)
+                try:
+                    self._send_buffered(response.status, response.reason, response.getheaders(), raw)
+                finally:
+                    proxy.finish_turn(turn_state, issued_state)
                 return None
             if "text/event-stream" in (response.getheader("Content-Type") or ""):
                 return self._stream(response, profile, session, turn_state)
-            proxy.served(profile, session, turn_state, response)
-            self._forward_body(response)
+            issued_state = proxy.served(profile, session, turn_state, response)
+            try:
+                self._forward_body(response)
+            finally:
+                proxy.finish_turn(turn_state, issued_state)
             return None
 
     # -- responses -------------------------------------------------------------------------
@@ -551,24 +558,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             proxy.penalize(profile, verdict, response.status)
             return Failure(verdict, response.status, response.reason, response.getheaders(), buffer, profile.name)
 
-        proxy.served(profile, session, turn_state, response)
-        self._start_chunked(response.status, response.reason, response.getheaders())
-        alive = self._chunk(buffer)
-        broken = False
-        while alive and not ended:
-            item = reader.items.get()
-            if item is None:
-                break
-            if isinstance(item, BaseException):
-                broken = True        # upstream died mid-stream: end abruptly so Codex retries the turn
-                break
-            alive = self._chunk(item)
-        if alive and not broken:
-            alive = self._chunk(b"", final=True)
-        if not alive or broken:
-            self.upstream.discard()
-            response.close()
-            self.close_connection = True
+        issued_state = proxy.served(profile, session, turn_state, response)
+        try:
+            self._start_chunked(response.status, response.reason, response.getheaders())
+            alive = self._chunk(buffer)
+            broken = False
+            while alive and not ended:
+                item = reader.items.get()
+                if item is None:
+                    break
+                if isinstance(item, BaseException):
+                    broken = True        # upstream died mid-stream: end abruptly so Codex retries the turn
+                    break
+                alive = self._chunk(item)
+            if alive and not broken:
+                alive = self._chunk(b"", final=True)
+            if not alive or broken:
+                self.upstream.discard()
+                response.close()
+                self.close_connection = True
+        finally:
+            proxy.finish_turn(turn_state, issued_state)
         return None
 
     def _forward_body(self, response: http.client.HTTPResponse) -> None:
@@ -704,6 +714,7 @@ class RotationProxy:
         self.requests = 0
         self.switches = 0
         self.reset_checks: dict[str, float] = {}
+        self.quota_checks: dict[str, float] = {}
         self.log = ProxyLog(f"pid={os.getpid()} {role}", echo=echo)
         self.server = _Server(("127.0.0.1", 0), Handler)
         self.server.proxy = self
@@ -761,8 +772,11 @@ class RotationProxy:
 
     def plan(self, turn_state: str | None, session: str | None, fresh_turn: bool = True) -> list[Profile]:
         members, cfg = self.pool()
+        unconfirmed: set[str] = set()
+        if fresh_turn and not turn_state:
+            unconfirmed = self._reconcile_due_quota_pauses(members)
         blocked = state.blocks()
-        usable = [p for p in members if p.name not in blocked]
+        usable = [p for p in members if p.name not in blocked and p.name not in unconfirmed]
         threshold = cfg["rotation"].get("min_quota_headroom", 0)
         if threshold and not turn_state and fresh_turn:
             # Refresh stale snapshots at a fresh-turn boundary, never during a sticky turn.
@@ -770,21 +784,30 @@ class RotationProxy:
             quota.fetch_all(stale, timeout=3)
         order = [n for n in cfg["rotation"]["order"] if n in {p.name for p in usable}]
 
-        def rank(p: Profile) -> tuple[int, float, str]:
+        with self.lock:
+            session_owner = self._lookup(self.sessions, session)
+            current = self.current
+
+        def rank(p: Profile) -> tuple[int, float, int, str]:
             cached = quota.cached(p.name, max_age=1800)
             if cached and cached.status == "limited":
                 headroom = -1.0
             else:
                 headroom = cached.remaining if cached and cached.remaining is not None else 50.0
-            return (order.index(p.name) if p.name in order else len(order), -headroom, p.name)
+            order_rank = order.index(p.name) if p.name in order else len(order)
+            affinity_rank = 0 if p.name in (session_owner, current) else 1
+            return (order_rank, -headroom, affinity_rank, p.name)
 
         with self.lock:
-            preferred = [self._lookup(self.turns, turn_state), self._lookup(self.sessions, session), self.current]
+            turn_owner = self._lookup(self.turns, turn_state)
         by_name = {p.name: p for p in usable}
         result: list[Profile] = []
-        for name in preferred:
-            if name in by_name and by_name[name] not in result:
-                result.append(by_name[name])
+        if turn_owner in by_name:
+            result.append(by_name[turn_owner])
+        elif not order:
+            for name in (session_owner, current):
+                if name in by_name and by_name[name] not in result:
+                    result.append(by_name[name])
         result += [p for p in sorted(usable, key=rank) if p not in result]
         if not turn_state and threshold and fresh_turn and result:
             def headroom(p: Profile) -> float | None:
@@ -808,10 +831,42 @@ class RotationProxy:
                         healthy.append(member)
                 if healthy:
                     result = healthy + [p for p in result if p not in healthy]
-        if not result and members:
+        fallback = [p for p in members if p.name not in unconfirmed]
+        if not result and fallback:
             # everything is blocked: ask the account that frees up first, so Codex gets a real answer
-            result = sorted(members, key=lambda p: blocked.get(p.name, (0, ""))[0])[:1]
+            result = sorted(fallback, key=lambda p: blocked.get(p.name, (0, ""))[0])[:1]
         return result
+
+    def _reconcile_due_quota_pauses(self, members: list[Profile]) -> set[str]:
+        """Refresh reset-due quota pauses before ranking a new model request."""
+        now = time.time()
+        member_by_name = {profile.name: profile for profile in members}
+        unconfirmed: set[str] = set()
+        for name, (until, reason) in state.quota_pauses().items():
+            profile = member_by_name.get(name)
+            if profile is None:
+                continue
+            saved = quota.stored(name)
+            reset_due = bool(saved and saved.status == "limited" and any(
+                window.remaining <= 0 and window.reset_at and window.reset_at <= now
+                for window in saved.windows))
+            if until > now and not reset_due:
+                continue
+            unconfirmed.add(name)
+            with self.lock:
+                last_check = self.quota_checks.get(name, -float("inf"))
+                if time.monotonic() - last_check < QUOTA_RECHECK_DELAY:
+                    continue
+                self.quota_checks[name] = time.monotonic()
+            checked = quota.fetch(profile, timeout=3)
+            if checked.eligible and checked.usage_allowed is True:
+                state.clear_quota_pause(name)
+                unconfirmed.discard(name)
+                continue
+            retry_until = checked.usable_again_at if checked.status == "limited" else None
+            state.set_quota_pause(name, retry_until if retry_until and retry_until > now else now + QUOTA_RECHECK_DELAY,
+                                  reason)
+        return unconfirmed
 
     def redeem(self, profile: Profile) -> bool:
         from . import redemption
@@ -837,7 +892,7 @@ class RotationProxy:
         return issuer in (None, name)
 
     def served(self, profile: Profile, session: str | None, turn_state: str | None,
-               response: http.client.HTTPResponse) -> None:
+               response: http.client.HTTPResponse) -> str | None:
         now = time.time()
         with self.lock:
             self.requests += 1
@@ -856,6 +911,14 @@ class RotationProxy:
         if previous != profile.name:
             self.switches += 1
             self.log.write("switch", **{"from": previous, "to": profile.name, "session": _short(session)})
+        return issued
+
+    def finish_turn(self, turn_state: str | None, issued_state: str | None) -> None:
+        """Release completed request affinity while retaining token-origin history."""
+        with self.lock:
+            for key in (turn_state, issued_state):
+                if key:
+                    self.turns.pop(key, None)
 
     def _prune(self, now: float) -> None:
         for table in (self.sessions, self.turns):

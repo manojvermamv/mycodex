@@ -98,6 +98,26 @@ def blocks(max_age: float = 2.0) -> dict[str, tuple[int, str]]:
     return result
 
 
+def quota_pauses(max_age: float = 2.0) -> dict[str, tuple[int, str]]:
+    """name -> (until, reason) for quota pauses, including expired ones."""
+    result = {}
+    for name, entry in load(max_age)["profiles"].items():
+        reason = entry.get("blocked_reason") or ""
+        until = entry.get("blocked_until") or 0
+        if reason.startswith("quota:"):
+            result[name] = (int(until), reason)
+    return result
+
+
+def set_quota_pause(name: str, until: float, reason: str) -> None:
+    """Update quota pause fields without replacing another kind of pause."""
+    with editing() as data:
+        entry = _entry(data, name)
+        if entry.get("blocked_reason") and not str(entry["blocked_reason"]).startswith("quota:"):
+            return
+        entry.update(blocked_until=int(until), blocked_reason=reason[:200], blocked_at=int(time.time()))
+
+
 def save_quota(name: str, snapshot: dict[str, Any]) -> None:
     with editing() as data:
         _entry(data, name)["quota"] = snapshot

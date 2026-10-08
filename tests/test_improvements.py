@@ -254,6 +254,100 @@ class HeadroomTest(unittest.TestCase):
         self.assertEqual(self.proxy.plan(None, None)[0].name, 'a')
 
 
+class QuotaPriorityRecoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.box = Sandbox()
+        for name in ('a', 'b'):
+            write_auth(self.box.home(name), 'acct-' + name, name + '@example.com')
+        self.cfg = config._merge(config.DEFAULTS, {'active': 'a', 'rotation': {
+            'order': ['a', 'b'], 'min_quota_headroom': 0,
+        }})
+        self.config = mock.patch.object(config, 'load', return_value=self.cfg)
+        self.config.start()
+        self.proxy = proxy.RotationProxy('a')
+
+    def tearDown(self):
+        self.proxy.server.server_close()
+        self.config.stop()
+        self.box.close()
+
+    @staticmethod
+    def usage(name, status, windows):
+        return quota.Quota(name, status != 'unknown', status, windows=windows,
+                           usage_allowed=True if status == 'ready' else False)
+
+    def save_limited(self, *windows):
+        state.save_quota('a', quota.to_dict(self.usage('a', 'limited', list(windows))))
+
+    def test_due_five_hour_reset_is_refreshed_before_selecting_a_fresh_prompt(self):
+        now = int(time.time())
+        self.save_limited(quota.Window('5h', 18000, 100, now - 1))
+        state.block('a', now - 1, 'quota: exhausted')
+        ready = self.usage('a', 'ready', [quota.Window('5h', 18000, 0, now + 18000)])
+
+        with mock.patch.object(quota, 'fetch', return_value=ready) as fetch:
+            result = self.proxy.plan(None, 'session')
+
+        self.assertEqual([p.name for p in result], ['a', 'b'])
+        fetch.assert_called_once()
+        self.assertNotIn('a', state.quota_pauses())
+
+    def test_due_weekly_and_multiple_exhausted_windows_wait_for_latest_reset(self):
+        now = int(time.time())
+        self.save_limited(quota.Window('5h', 18000, 100, now - 1),
+                          quota.Window('weekly', 604800, 100, now - 1))
+        state.block('a', now - 1, 'quota: exhausted')
+        still_limited = self.usage('a', 'limited', [
+            quota.Window('5h', 18000, 100, now + 18000),
+            quota.Window('weekly', 604800, 100, now + 604800),
+        ])
+
+        with mock.patch.object(quota, 'fetch', return_value=still_limited):
+            result = self.proxy.plan(None, 'session')
+
+        self.assertEqual(result[0].name, 'b')
+        self.assertEqual(state.quota_pauses()['a'][0], now + 604800)
+
+    def test_failed_due_recheck_does_not_promote_or_clear_quota_pause(self):
+        now = int(time.time())
+        self.save_limited(quota.Window('5h', 18000, 100, now - 1))
+        state.block('a', now - 1, 'quota: exhausted')
+
+        with mock.patch.object(quota, 'fetch', return_value=self.usage('a', 'unknown', [])):
+            result = self.proxy.plan(None, 'session')
+
+        self.assertEqual(result[0].name, 'b')
+        self.assertIn('a', state.quota_pauses())
+        self.assertIn('a', state.blocks(max_age=0))
+
+    def test_fresh_prompt_reorders_same_session_after_completed_response(self):
+        now = time.time()
+        self.proxy.current = 'b'
+        self.proxy.sessions['session'] = ('b', now)
+        self.proxy.turns['turn'] = ('b', now)
+        self.proxy.issued['turn'] = 'b'
+
+        self.proxy.finish_turn('turn', None)
+
+        self.assertEqual(self.proxy.plan(None, 'session')[0].name, 'a')
+        self.assertNotIn('turn', self.proxy.turns)
+        self.assertEqual(self.proxy.issued['turn'], 'b')
+
+    def test_in_progress_turn_state_keeps_account_affinity(self):
+        self.proxy.turns['turn'] = ('b', time.time())
+
+        self.assertEqual(self.proxy.plan('turn', 'session')[0].name, 'b')
+
+    def test_non_quota_pause_is_not_cleared_by_quota_recheck(self):
+        state.block('a', time.time() + 300, 'auth: invalid')
+
+        with mock.patch.object(quota, 'fetch') as fetch:
+            self.proxy.plan(None, 'session')
+
+        self.assertIn('a', state.blocks(max_age=0))
+        fetch.assert_not_called()
+
+
 class RedemptionTest(unittest.TestCase):
     def setUp(self):
         self.box = Sandbox()
