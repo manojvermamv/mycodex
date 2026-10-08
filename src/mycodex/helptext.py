@@ -69,6 +69,7 @@ DETAILS = {
     "remote stop": ("Stop the phone connection and disable automatic startup. Can interrupt phone work.", "mycodex remote stop", []),
     "remote restart": ("Restart the phone connection using saved settings, including its saved failover choice. Can interrupt active work.", "mycodex remote restart", []),
     "remote status": ("Check the phone connection and paired devices. The usual display also checks usage; --json skips those extra usage checks.", "mycodex remote [status] [--json]", [JSON]),
+    "remote models share": ("Copy one Plus account's model catalogue into the configured phone account without restarting or changing pairing.", "mycodex remote models share [SOURCE]", [("SOURCE", "Optional Plus account; default is the saved source or your usual account.")]),
     "remote pair": ("Create a short-lived code to connect your phone. Sign in to the same ChatGPT account as the computer's phone connection.", "mycodex remote pair [--no-wait]", [("--no-wait", "Print the code and return without waiting for the phone.")]),
     "remote clients": ("List paired phones, or remove one phone's access.", "mycodex remote clients [--revoke ID]", [("--revoke ID", "Remove the paired device with this ID; get IDs by listing devices first.")]),
     "remote logs": ("Read the phone connection's service log.", "mycodex remote logs [OPTIONS]", [("-n, --lines N", "Show the last N lines; default 100. Use a positive whole number."), FOLLOW]),

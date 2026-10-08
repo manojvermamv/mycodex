@@ -10,7 +10,7 @@ from unittest import mock
 
 import test_core as core
 from test_core import Sandbox, FakeBackend, write_auth
-from mycodex import appserver, cli, config, launch, maintenance, projects, proxy, quota, redemption, remote_cmd, state, threads
+from mycodex import appserver, cli, config, launch, maintenance, model_cache, profiles, projects, proxy, quota, redemption, remote_cmd, state, threads
 
 TID = '00000000-0000-4000-8000-000000000001'
 PROJECT = {'id': 'p1', 'name': 'Example', 'roots': [{'path': '/work/example'}]}
@@ -525,3 +525,89 @@ class RemoteDefaultTest(unittest.TestCase):
 
     def test_restart_preserves_explicit_off(self):
         self.assertFalse(self.start_with_existing_off(True))
+
+
+class ModelCacheShareTest(unittest.TestCase):
+    def setUp(self):
+        self.box = Sandbox()
+        self.source_home = self.box.home('plus')
+        self.target_home = self.box.home('relay')
+        self.source_home.mkdir(parents=True)
+        self.target_home.mkdir(parents=True)
+        self.source = profiles.Profile('plus', self.source_home)
+        self.target = profiles.Profile('relay', self.target_home)
+        self.cfg = config._merge(config.DEFAULTS, {'active': 'plus', 'remote': {'profile': 'relay'}})
+
+    def tearDown(self):
+        self.box.close()
+
+    @contextlib.contextmanager
+    def editing(self):
+        yield self.cfg
+
+    def test_model_cache_share_copies_only_valid_json_to_relay_atomically(self):
+        source_cache = self.source_home / 'models_cache.json'
+        target_cache = self.target_home / 'models_cache.json'
+        source_cache.write_text('{"models":["plus"]}\n')
+        target_cache.write_text('{"models":["old"]}\n')
+        (self.target_home / 'auth.json').write_text('{"account":"relay"}\n')
+        (self.target_home / 'installation_id').write_text('relay-identity\n')
+
+        self.assertTrue(model_cache.sync(self.source, self.target))
+
+        self.assertEqual(target_cache.read_text(), '{"models":["plus"]}\n')
+        self.assertEqual(source_cache.read_text(), '{"models":["plus"]}\n')
+        self.assertEqual((self.target_home / 'auth.json').read_text(), '{"account":"relay"}\n')
+        self.assertEqual((self.target_home / 'installation_id').read_text(), 'relay-identity\n')
+        self.assertEqual(target_cache.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.target_home.glob('.models_cache.json.*')), [])
+
+    def test_model_cache_share_defaults_active_profile_and_saves_source(self):
+        (self.source_home / 'models_cache.json').write_text('{"models":["plus"]}')
+        with mock.patch.object(config, 'load', return_value=self.cfg), mock.patch.object(config, 'editing', self.editing), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(remote_cmd.share_models(None), 0)
+
+        self.assertEqual((self.target_home / 'models_cache.json').read_text(), '{"models":["plus"]}')
+        self.assertEqual(self.cfg['remote']['models_source'], 'plus')
+
+    def test_model_cache_share_explicit_source_overrides_active_profile(self):
+        other_home = self.box.home('other')
+        other_home.mkdir()
+        (self.source_home / 'models_cache.json').write_text('{"models":["active"]}')
+        (other_home / 'models_cache.json').write_text('{"models":["explicit"]}')
+        with mock.patch.object(config, 'load', return_value=self.cfg), mock.patch.object(config, 'editing', self.editing), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(remote_cmd.share_models('other'), 0)
+
+        self.assertEqual((self.target_home / 'models_cache.json').read_text(), '{"models":["explicit"]}')
+        self.assertEqual(self.cfg['remote']['models_source'], 'other')
+
+    def test_model_cache_share_failure_preserves_target_and_settings(self):
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        (self.source_home / 'models_cache.json').write_text('{not-json')
+        self.cfg['remote']['models_source'] = 'other'
+
+        with mock.patch.object(config, 'load', return_value=self.cfg), mock.patch.object(config, 'editing', self.editing), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(remote_cmd.share_models(None), 1)
+
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+        self.assertEqual(self.cfg['remote']['models_source'], 'other')
+
+    def test_model_cache_share_rejects_target_symlink_escape(self):
+        outside = self.box.shared / 'outside.json'
+        outside.write_text('{"models":["outside"]}')
+        (self.source_home / 'models_cache.json').write_text('{"models":["plus"]}')
+        (self.target_home / 'models_cache.json').symlink_to(outside)
+
+        with self.assertRaises(model_cache.ModelCacheError):
+            model_cache.sync(self.source, self.target)
+
+        self.assertEqual(outside.read_text(), '{"models":["outside"]}')
+
+    def test_model_cache_same_source_and_target_is_a_noop(self):
+        cache = self.source_home / 'models_cache.json'
+        cache.write_text('{"models":["same"]}')
+
+        self.assertFalse(model_cache.sync(self.source, self.source))
+
+        self.assertEqual(cache.read_text(), '{"models":["same"]}')

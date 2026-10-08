@@ -274,6 +274,14 @@ def cmd_remote(args: list[str], g: Globals) -> int:
     if sub == "start":
         ns = _remote_start_parser("remote start").parse(rest)
         return remote_cmd.start(ns.profile or g.profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait)
+    if sub == "models":
+        action = rest[0] if rest and not rest[0].startswith("-") else ""
+        if action == "share":
+            p = Parser("remote models share")
+            p.add_argument("source", nargs="?")
+            return remote_cmd.share_models(p.parse(rest[1:]).source)
+        ui.error("unknown remote models command", ["mycodex help remote models share"])
+        return 2
     p = Parser(f"remote {sub}")
     if sub == "stop":
         p.parse(rest)

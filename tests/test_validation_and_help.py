@@ -290,3 +290,13 @@ class FriendlyCLITest(unittest.TestCase):
         for name, (description, _, _) in helptext.DETAILS.items():
             self.assertIn('## ' + name, text)
             self.assertIn(description, text)
+
+    def test_remote_models_share_help_and_generated_guide_match(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as ctx:
+            cli.main(['remote', 'models', 'share', '--help'])
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn('mycodex remote models share [SOURCE]', out.getvalue())
+        description = helptext.DETAILS['remote models share'][0]
+        self.assertIn(description, out.getvalue())
+        self.assertIn('## remote models share', helptext.markdown())
+        self.assertIn(description, helptext.markdown())

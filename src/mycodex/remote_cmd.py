@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import appserver, config, fmt, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
+from . import appserver, config, fmt, model_cache, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
 
 ACTIVE = ("active", "activating", "reloading")
 
@@ -125,6 +125,41 @@ def restart() -> int:
         ui.error("remote-control service is not installed", ["mycodex remote start"])
         return 1
     return start(restart=True)
+
+
+def share_models(source_name: str | None) -> int:
+    """Copy one Plus profile's model cache into the configured relay profile."""
+    cfg = config.load()
+    names = profiles.names(cfg)
+    target_name = cfg["remote"].get("profile")
+    if not target_name:
+        ui.error("no phone account is configured", ["mycodex remote start --profile NAME"])
+        return 1
+    source_name = source_name or cfg["remote"].get("models_source") or profiles.active_name(cfg)
+    if not source_name:
+        ui.error("choose a source account", ["mycodex remote models share SOURCE"])
+        return 1
+    try:
+        source = profiles.get(resolve.resolve(source_name, names, cfg), cfg)
+        target = profiles.get(resolve.resolve(target_name, names, cfg), cfg)
+    except SystemExit as exc:
+        ui.error(str(exc))
+        return 1
+    if source is None or target is None:
+        ui.error("the selected phone or source account no longer exists")
+        return 1
+    try:
+        copied = model_cache.sync(source, target)
+    except model_cache.ModelCacheError as exc:
+        ui.error(str(exc))
+        return 1
+    if not copied:
+        ui.info("the selected source is already the phone account; no model cache copy is needed")
+        return 0
+    with config.editing() as data:
+        data["remote"]["models_source"] = source.name
+    ui.success(f"shared {source.name}'s model cache with phone account {target.name}")
+    return 0
 
 
 # ----------------------------------------------------------------------------- status

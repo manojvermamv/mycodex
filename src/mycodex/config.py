@@ -31,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
     "remote": {
         "mode": "rotating",       # rotating: model turns go through the rotation proxy; pinned: one account
         "profile": None,          # relay account the phone pairs with
+        "models_source": None,    # Plus profile whose model cache is copied to the relay profile
         "cwd": None,              # working directory for the service (default: home)
         "failover": True,         # auth invalidation in either mode; quota exhaustion only in pinned mode
         "failover_check_seconds": 300,
@@ -74,7 +75,7 @@ def load(path: Path = paths.CONFIG_FILE) -> dict[str, Any]:
         remote = check.object_value(data.get("remote"), "phone settings")
         if remote.get("mode") not in REMOTE_MODES:
             raise check.InvalidData("remote.mode must be rotating (share accounts) or pinned (one account)")
-        for key in ("profile", "cwd"):
+        for key in ("profile", "models_source", "cwd"):
             check.text_value(remote.get(key), "remote." + key, optional=True)
         check.boolean(remote.get("failover"), "remote.failover")
         check.number(remote.get("failover_check_seconds"), "remote.failover_check_seconds", minimum=1, integer=True)
