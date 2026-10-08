@@ -675,8 +675,9 @@ service launcher, source snapshot, proxy, and protected processes. This is the h
 v0.3.0 deployment.
 
 As of 2026-10-08, v0.4.0 contains 29 package modules. Its guarded restart is pending:
-this conversation is in the relay cgroup, so an independent observer will be armed after
-release validation and wait for all active threads/tools to finish plus ten seconds idle.
+this conversation is in the relay cgroup. An independent observer is armed and waiting
+for all active threads/tools to finish plus ten seconds idle. The live Plus-cache copy
+was verified with the relay PID, credentials, identity, and paired client preserved.
 New CLI commands report v0.4.0; updating source alone does not reload the running proxy.
 
 R01/R06 and the other open review items are explicitly retained in the

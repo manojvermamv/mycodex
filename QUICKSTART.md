@@ -311,8 +311,8 @@ rm -rf ~/mycodex
 For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
 143 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
 for v0.3.0; the v0.4.0 guarded restart is pending. This conversation runs in the relay
-cgroup. After release validation, an independent observer will be armed and wait for
-all active threads/tools to finish and ten seconds idle. See
+cgroup. An independent observer is armed and waiting for all active threads/tools to
+finish and ten seconds idle. See
 [redeployment.md](docs/redeployment.md) for the procedure and its limits.
 
 New CLI commands report v0.4.0. Updating source alone does not reload the running proxy;

@@ -149,7 +149,7 @@ publication leaves existing processes running with their loaded metadata.
 The current candidate contains 29 package modules and 143 isolated tests. The completed
 2026-10-05 deployment and 81/114-test evidence above belong to earlier snapshots.
 The v0.4.0 guarded restart has not completed: this conversation is in the relay cgroup.
-After release validation an independent observer will be armed, waiting for all active
+An independent observer is armed, waiting for all active
 threads/tools to finish and ten seconds idle before restarting. New work resets the
 idle window; the observer must remain outside the relay cgroup.
 
@@ -158,3 +158,15 @@ validate the candidate and recovery snapshot before acting, then verify relay/pr
 health and retained identity/pairing/projects using the guarded procedure above.
 A completed observer result is required before claiming deployment success. R01/R06
 and the other documented lifecycle/concurrency limitations remain open.
+
+Before arming, the candidate passed 143 tests, the frozen v0.3.0 recovery copy passed
+114 tests, and the unchanged observer passed 22 mocked regressions. An unarmed host
+run confirmed its separate systemd cgroup and absence of `PartOf`/`BindsTo` ties to
+the relay. Candidate and recovery hashes were verified again when arming. The live
+model-cache copy matched the Plus source without changing the relay PID, credentials,
+installation/environment identity, or paired client. The PATH CLI reports 0.4.0.
+
+The current job's unit name and private status path are supplied in the deployment
+handoff. Its `waiting_for_idle` phase means the restart has not occurred. Keep this
+distinct from `completed` with `outcome: deployed`, which requires the reconnect and
+two-minute health checks above.

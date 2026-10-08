@@ -227,8 +227,8 @@ Relay model-cache sharing saves a Plus source for managed
 starts and safely copies only its catalogue; invalid sources, unsafe paths, and deeply
 nested JSON fail readably. Optional startup cache failures warn and continue.
 
-The v0.4.0 guarded restart is pending. This conversation is in the relay cgroup; after
-release validation an independent observer will be armed to wait for all active
+The v0.4.0 guarded restart is pending. This conversation is in the relay cgroup; an
+independent observer is armed and waiting for all active
 threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
 running proxy. The [redeployment guide](redeployment.md) describes the handoff, and
 R01/R06 plus the other open review items remain unresolved.

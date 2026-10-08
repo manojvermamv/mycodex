@@ -24,9 +24,9 @@
 ### Upgrade behavior and validation
 
 - New CLI invocations load v0.4.0; updating source alone does not reload the running
-  proxy. The 2026-10-08 guarded host restart is pending. After release validation, an
-  independent observer will wait for all active threads/tools to finish and ten seconds
-  idle before acting. See the [redeployment guide](docs/redeployment.md).
+  proxy. The 2026-10-08 guarded host restart is pending. An independent observer is
+  armed and waiting for all active threads/tools to finish and ten seconds idle before
+  acting. See the [redeployment guide](docs/redeployment.md).
 - The package contains 29 modules; 143 isolated tests pass with external HTTP, external
   subprocess launches, and service signals blocked. Generated help and public documentation
   links are checked.

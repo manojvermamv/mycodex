@@ -482,7 +482,7 @@ launcher and keeps its account/pairing. Its supervisor and source matched the su
 deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
 
 The 2026-10-08 v0.4.0 follow-up has 29 modules and 143 isolated tests. Its guarded
-restart is pending: this conversation is in the relay cgroup. After release validation,
-an independent observer will be armed to wait for all active threads/tools and ten
-seconds idle. New invocations report 0.4.0; updating CLI/source alone does not reload
+restart is pending: this conversation is in the relay cgroup. An independent observer
+is armed and waiting for all active threads/tools and ten seconds idle. New invocations
+report 0.4.0; updating CLI/source alone does not reload
 the running proxy.

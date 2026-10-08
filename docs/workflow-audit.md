@@ -136,7 +136,8 @@ optional startup failures, including nonblocking rejection of FIFO sources, warn
 continue with the existing relay cache.
 
 The package now has 29 modules and 143 isolated tests. The guarded restart is pending:
-this conversation runs in the relay cgroup. After release validation an independent
-observer will be armed to wait for all active threads/tools and ten seconds idle.
+this conversation runs in the relay cgroup. An independent observer is armed and waiting
+for all active threads/tools and ten seconds idle. The live cache copy retained the relay
+PID, credentials, installation/environment identity, and paired client.
 Updating CLI/source alone does not reload the proxy. R01/R06 and the other documented
 open issues remain. See the [redeployment guide](redeployment.md).

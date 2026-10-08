@@ -198,7 +198,7 @@ catalogue-only copying, source/destination safety, deeply nested JSON failures, 
 bounded FIFO rejection and warning/continued startup on optional cache failure.
 
 The v0.4.0 guarded restart is pending. This conversation runs in the relay cgroup;
-after release validation an independent observer will be armed to wait for all active
+an independent observer is armed and waiting for all active
 threads/tools and ten seconds idle. Updating CLI/source alone does not reload the
 running proxy. No new deployment success is claimed. R01/R06 and every other finding
 still marked open remain unresolved; see [redeployment.md](redeployment.md).
