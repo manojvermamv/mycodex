@@ -378,6 +378,7 @@ mycodex remote-control --cwd ~/project           # default working directory for
 mycodex remote-control --foreground              # run in this terminal instead of the service
 
 mycodex remote status [--json]       # mode, relay, connection, host, paired phones, proxy
+mycodex remote models share [SOURCE] # copy a Plus catalogue now; no service restart or re-pairing
 mycodex remote pair [--no-wait]      # short-lived pairing code for the ChatGPT app
 mycodex remote clients [--revoke ID] # paired devices
 mycodex remote logs [-f] [-n N]      # service logs
@@ -393,6 +394,12 @@ Foreground mode currently honors profile/mode only; `--cwd`, failover, force, an
 no-wait are accepted but not applied there. Service start can stop conflicting official
 remote daemons and restart the existing service when settings change. It is a lifecycle
 operation, not a status check.
+
+`mycodex remote models share [SOURCE]` copies a selected Plus profile's model catalogue
+into the configured relay profile immediately and saves it as the source for later managed
+service starts. The command does not stop, restart, or re-pair the phone service. Before
+each later managed server launch, mycodex refreshes that same cache; if the optional copy
+cannot run, it logs a warning and starts the phone relay with its existing cache.
 
 </details>
 
@@ -463,6 +470,10 @@ mycodex --profile NAME remote-control
   an unauthenticated relay in either mode, or an exhausted relay in pinned mode. An
   immediate child exit currently bypasses those checks. Sign the phone into the replacement
   account and verify pairing afterwards. `--failover` / `--no-failover` select the policy.
+- **Model catalogue**: `mycodex remote models share [SOURCE]` refreshes the relay account's
+  cache without changing service lifecycle or pairing, and remembers the source. Managed
+  starts repeat the optional copy before launching the server; a bad or unavailable source
+  leaves the existing cache in place, logs a warning, and does not keep the phone offline.
 
 ## Projects and new threads
 

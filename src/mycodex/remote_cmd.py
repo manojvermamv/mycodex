@@ -128,7 +128,7 @@ def restart() -> int:
 
 
 def share_models(source_name: str | None) -> int:
-    """Copy one Plus profile's model cache into the configured relay profile."""
+    """Copy one Plus profile's cache now and save it for future managed starts."""
     cfg = config.load()
     names = profiles.names(cfg)
     target_name = cfg["remote"].get("profile")
@@ -158,7 +158,7 @@ def share_models(source_name: str | None) -> int:
         return 0
     with config.editing() as data:
         data["remote"]["models_source"] = source.name
-    ui.success(f"shared {source.name}'s model cache with phone account {target.name}")
+    ui.success(f"shared {source.name}'s model cache with phone account {target.name}; future managed starts refresh it")
     return 0
 
 

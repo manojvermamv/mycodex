@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import appserver, codex, config, launch, paths, procs, profiles, quota, ui
+from . import appserver, codex, config, launch, model_cache, paths, procs, profiles, quota, ui
 
 EXIT_FAILOVER = 75
 
@@ -157,6 +157,21 @@ def _say(message: str) -> None:
     print(f"mycodex-remote: {message}", file=sys.stderr, flush=True)
 
 
+def _sync_configured_models(cfg: dict[str, Any], target: profiles.Profile) -> None:
+    """Refresh the relay cache without changing the service lifecycle."""
+    source_name = cfg["remote"].get("models_source")
+    if not source_name:
+        return
+    source = profiles.get(source_name, cfg)
+    if not source:
+        _say("warning: configured model cache source is unavailable; continuing")
+        return
+    try:
+        model_cache.sync(source, target)
+    except model_cache.ModelCacheError as exc:
+        _say(f"warning: model cache sync failed; continuing: {exc}")
+
+
 def serve() -> int:
     """Service entry point (ExecStart)."""
     cfg = config.load()
@@ -165,6 +180,7 @@ def serve() -> int:
     if not profile or not profile.logged_in:
         _say(f"relay profile {name!r} is not a logged-in mycodex profile; refusing to start")
         return 3
+    _sync_configured_models(cfg, profile)
     return run_server(profile, cfg["remote"].get("mode") or "rotating", cfg, service=True)
 
 

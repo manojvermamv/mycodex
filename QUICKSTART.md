@@ -183,6 +183,18 @@ daemons or restart the existing service. New starts enable relay failover by def
 currently needs the child to stay alive; it does not cover immediate child exit. A relay
 account change can require phone sign-in/pairing with the replacement account.
 
+If the relay needs a Plus account's model catalogue, copy it while the phone service keeps
+running:
+
+```bash
+mycodex remote models share work
+```
+
+This saves `work` as the source and updates only the relay's model cache; it does not
+restart the service or change pairing. Later managed service starts refresh the saved cache
+before the server launches. An unavailable or invalid cache logs a warning and still starts
+the phone relay with its previous cache.
+
 Register a project without a model turn, then link an existing thread:
 
 ```bash

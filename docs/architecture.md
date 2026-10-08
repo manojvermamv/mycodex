@@ -289,6 +289,7 @@ Why each piece exists:
 | `CODEX_HOME` = relay account | Preserves `installation_id` for that home and supports the existing account-keyed enrollment; a different relay account can change enrollment/pairing. |
 | proxy inside the supervisor | The service has its own proxy; stopping it never affects terminal sessions, and its events go to the journal. |
 | `mycodex __remote-serve` parent | Forwards signals, records `state/remote-serve.json` (including the proxy port), and with `failover` checks the relay account every few minutes. |
+| configured model-cache source | Before this managed service launches its Codex child, copies only the saved source profile's validated `models_cache.json` into the relay profile. A failure warns and leaves the existing relay cache and service startup intact. |
 
 **Conflicts.** Before starting, `mycodex remote start` stops codex-managed daemons that
 have remote control enabled (`codex remote-control stop`, then
@@ -306,6 +307,14 @@ This path runs only while the child remains alive through a check. An immediate 
 exit returns without a failover decision (R06). Foreground mode has no failover tick and
 now rejects cwd/failover/force/no-wait flags with a readable error (R05 resolved). Start/restart/stop and
 daemon conflict handling can interrupt active work; none are used just to refresh docs.
+
+**Model cache sharing.** `mycodex remote models share [SOURCE]` immediately copies a
+selected Plus profile's model catalogue into the configured relay profile and records that
+source for future managed starts. It does not call service lifecycle operations, change
+`auth.json` or `installation_id`, or revoke pairing. The `__remote-serve` entry point
+repeats the optional atomic copy before it starts the official server. Missing, malformed,
+or otherwise unreadable source caches preserve the relay cache, produce a warning, and do
+not stop server startup. Foreground debugging bypasses this managed-start refresh.
 
 **Control socket.** Status, pairing, client lists, seeding and thread adoption talk to the
 running server with JSON-RPC over WebSocket through the official relay

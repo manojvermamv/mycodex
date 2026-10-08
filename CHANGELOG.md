@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `mycodex remote models share [SOURCE]` copies a selected Plus model catalogue to the
+  configured phone relay without restarting it or changing pairing. The saved source is
+  refreshed before later managed relay starts; an optional-cache failure warns and leaves
+  the phone service able to start.
+
 ## v0.3.0 — 2026-10-05
 
 This release adds project management, existing-conversation linking, earned-reset

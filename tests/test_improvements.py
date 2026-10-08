@@ -10,7 +10,7 @@ from unittest import mock
 
 import test_core as core
 from test_core import Sandbox, FakeBackend, write_auth
-from mycodex import appserver, cli, config, launch, maintenance, model_cache, profiles, projects, proxy, quota, redemption, remote_cmd, state, threads
+from mycodex import appserver, cli, config, launch, maintenance, model_cache, profiles, projects, proxy, quota, redemption, remote, remote_cmd, state, threads
 
 TID = '00000000-0000-4000-8000-000000000001'
 PROJECT = {'id': 'p1', 'name': 'Example', 'roots': [{'path': '/work/example'}]}
@@ -623,3 +623,44 @@ class ModelCacheShareTest(unittest.TestCase):
         self.assertFalse(model_cache.sync(self.source, self.source))
 
         self.assertEqual(cache.read_text(), '{"models":["same"]}')
+
+    def test_remote_start_syncs_configured_models_source_without_service_lifecycle_action(self):
+        write_auth(self.source_home, 'plus-account', 'plus@example.com')
+        write_auth(self.target_home, 'relay-account', 'relay@example.com')
+        (self.source_home / 'models_cache.json').write_text('{"models":["plus"]}')
+        (self.target_home / 'models_cache.json').write_text('{"models":["old"]}')
+        self.cfg['remote']['models_source'] = 'plus'
+        observed_caches = []
+
+        def start_server(profile, mode, cfg, service):
+            observed_caches.append((self.target_home / 'models_cache.json').read_text())
+            self.assertEqual(profile.name, 'relay')
+            self.assertTrue(service)
+            return 17
+
+        with mock.patch.object(config, 'load', return_value=self.cfg), \
+             mock.patch.object(remote, 'run_server', side_effect=start_server), \
+             mock.patch.object(remote, '_systemctl') as lifecycle:
+            self.assertEqual(remote.serve(), 17)
+
+        self.assertEqual(observed_caches, ['{"models":["plus"]}'])
+        lifecycle.assert_not_called()
+
+    def test_remote_start_continues_when_automatic_cache_sync_fails(self):
+        write_auth(self.source_home, 'plus-account', 'plus@example.com')
+        write_auth(self.target_home, 'relay-account', 'relay@example.com')
+        (self.source_home / 'models_cache.json').write_text('{not-json')
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        self.cfg['remote']['models_source'] = 'plus'
+
+        with mock.patch.object(config, 'load', return_value=self.cfg), \
+             mock.patch.object(remote, 'run_server', return_value=0) as start_server, \
+             mock.patch.object(remote, '_systemctl') as lifecycle, \
+             contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(remote.serve(), 0)
+
+        start_server.assert_called_once()
+        lifecycle.assert_not_called()
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+        self.assertIn('model cache sync failed; continuing', err.getvalue())

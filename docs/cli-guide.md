@@ -429,6 +429,19 @@ mycodex remote [status] [--json]
 | `--json` | Show structured data for scripts instead of the usual table. |
 | `-h, --help` | Show instructions without needing required values. |
 
+## remote models share
+
+Copy one Plus account's model catalogue into the configured phone account without restarting or changing pairing. Saves that source so later managed phone-service starts refresh it before the server launches; a refresh warning never keeps the phone offline.
+
+```text
+mycodex remote models share [SOURCE]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `SOURCE` | Optional Plus account; default is the saved source or your usual account. |
+| `-h, --help` | Show instructions without needing required values. |
+
 ## remote pair
 
 Create a short-lived code to connect your phone. Sign in to the same ChatGPT account as the computer's phone connection.
