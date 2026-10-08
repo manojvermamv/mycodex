@@ -197,6 +197,10 @@ restart the service or change pairing. Later managed service starts refresh the 
 before the server launches. An unavailable or invalid cache logs a warning and still starts
 the phone relay with its previous cache.
 
+Keep choosing a model for each conversation in Codex or your phone client. Sharing the
+catalogue leaves your model default and saved conversation choices intact. Switching
+accounts also preserves the model and reasoning settings you selected.
+
 Register a project without a model turn, then link an existing thread:
 
 ```bash

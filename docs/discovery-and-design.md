@@ -217,7 +217,7 @@ publication changes metadata/docs and does not restart active sessions. R01/R06 
 
 ## v0.4.0 follow-up — 2026-10-08
 
-The current package has 29 modules and 143 isolated tests; the 81/114-test results above
+The current package has 29 modules and 145 isolated tests; the 81/114-test results above
 remain historical. Due persisted 5-hour/weekly resets now trigger checks at the next
 fresh request, restoring configured priority only on explicit readiness and preserving
 active response affinity until the last overlapping owner completes. Completed token
@@ -226,6 +226,11 @@ requests; without an order, quota ranks before session/current tie-breakers.
 Relay model-cache sharing saves a Plus source for managed
 starts and safely copies only its catalogue; invalid sources, unsafe paths, and deeply
 nested JSON fail readably. Optional startup cache failures warn and continue.
+
+Model choices remain user controlled for each conversation. Catalogue copying preserves
+configured defaults and saved thread settings; routing preserves the selected model and
+reasoning settings in each request. The follow-up adds two regressions without changing
+runtime behavior.
 
 The v0.4.0 guarded restart is pending. This conversation is in the relay cgroup; an
 independent observer is armed and waiting for all active

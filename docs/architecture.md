@@ -325,6 +325,12 @@ replacement has mode 0600 and changes only the relay model cache. Missing, malfo
 or otherwise unreadable source caches preserve the relay cache, produce a warning, and do
 not stop server startup. Foreground debugging bypasses this managed-start refresh.
 
+The catalogue supplies available-model metadata; model selection remains in the official
+Codex client for each conversation. Cache sharing does not write `config.toml`, saved
+thread choices, or reasoning settings, and sends no thread/turn settings RPC. The rotation
+proxy forwards request bodies byte-for-byte when retrying another account, preserving
+each request's `model` and reasoning settings. It never selects a model from the catalogue.
+
 **Control socket.** Status, pairing, client lists, seeding and thread adoption talk to the
 running server with JSON-RPC over WebSocket through the official relay
 `codex app-server proxy --sock <socket>`. mycodex finds the socket from the server process
@@ -424,7 +430,7 @@ end-to-end proxy run against a local fake backend: a usage limit moves the reque
 next account, a failure inside the stream before output does too, a 401 refreshes once,
 exhausted accounts return the earliest reset, active turn-state bindings retain affinity,
 completed tokens keep issuer filtering, and WebSocket upgrades get 426.
-The suite contains 143 tests across three files as of 2026-10-08 (the 2026-10-05
+The suite contains 145 tests across three files as of 2026-10-08 (the 2026-10-05
 v0.3.0 suite had 114). New regressions cover reset-due priority restoration, active
 response affinity and overlapping ownership, completed-header recovery, no-order quota
 ranking, model-cache copying and startup warnings, source/destination safety, bounded
@@ -481,7 +487,8 @@ normal idle eviction was accepted during monitoring. The relay uses the working-
 launcher and keeps its account/pairing. Its supervisor and source matched the successful
 deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
 
-The 2026-10-08 v0.4.0 follow-up has 29 modules and 143 isolated tests. Its guarded
+The 2026-10-08 v0.4.0 release was verified with 29 modules and 143 isolated tests;
+the subsequent model-choice audit brings the suite to 145 tests. Its guarded
 restart is pending: this conversation is in the relay cgroup. An independent observer
 is armed and waiting for all active threads/tools and ten seconds idle. New invocations
 report 0.4.0; updating CLI/source alone does not reload

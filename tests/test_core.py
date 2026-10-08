@@ -379,14 +379,16 @@ class FakeBackend(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     behavior: dict = {}
     calls: list = []
+    requests: list = []
 
     def log_message(self, *args):
         return
 
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         account = self.headers.get("ChatGPT-Account-Id")
         self.calls.append((account, self.headers.get("Authorization", "")[7:17], self.headers.get("x-codex-turn-state")))
+        self.requests.append((account, self.headers.get("session-id"), body))
         mode = self.behavior.get(account, "ok")
         if mode == "unauthorized" or (mode == "unauthorized-once" and sum(c[0] == account for c in self.calls) == 1):
             return self.reply(401, b'{"error":{"code":"token_expired"}}', "application/json")
@@ -434,6 +436,7 @@ class ProxyRotationTest(unittest.TestCase):
         for patch in self.patches:
             patch.start()
         FakeBackend.calls = []
+        FakeBackend.requests = []
         FakeBackend.behavior = {}
         self.backend = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeBackend)
         threading.Thread(target=self.backend.serve_forever, daemon=True).start()
@@ -447,9 +450,9 @@ class ProxyRotationTest(unittest.TestCase):
             patch.stop()
         self.box.close()
 
-    def post(self, session="s1", headers=None):
+    def post(self, session="s1", headers=None, request_body=b'{"input":[]}'):
         conn = http.client.HTTPConnection("127.0.0.1", self.proxy.port, timeout=10)
-        conn.request("POST", "/backend-api/codex/responses", body=b'{"input":[]}',
+        conn.request("POST", "/backend-api/codex/responses", body=request_body,
                      headers={"Content-Type": "application/json", "session-id": session,
                               "Authorization": "Bearer launch-profile-token", **(headers or {})})
         response = conn.getresponse()
@@ -472,6 +475,32 @@ class ProxyRotationTest(unittest.TestCase):
         FakeBackend.calls = []
         self.post()
         self.assertEqual(self.accounts(), ["acct-b"])      # paused account is skipped, session stays on b
+
+    def test_cache_sharing_and_account_rotation_preserve_each_threads_selected_model(self):
+        from mycodex import model_cache
+        source, target = profiles.Profile("a", self.box.home("a")), profiles.Profile("b", self.box.home("b"))
+        (source.home / "models_cache.json").write_text(json.dumps({"models": [
+            {"slug": "catalogue-first", "priority": 0},
+            {"slug": "chosen-first", "priority": 1},
+            {"slug": "chosen-second", "priority": 2},
+        ]}))
+        first = b'{ "model": "chosen-first", "reasoning": {"effort": "high"}, "input": [] }'
+        second = b'{ "model": "chosen-second", "reasoning": {"effort": "low"}, "input": [] }'
+
+        self.assertEqual(self.post(session="thread-first", request_body=first)[0].status, 200)
+        self.assertTrue(model_cache.sync(source, target))
+        self.assertEqual(self.post(session="thread-second", request_body=second)[0].status, 200)
+        FakeBackend.behavior = {"acct-a": "quota"}
+        self.assertEqual(self.post(session="thread-first", request_body=first)[0].status, 200)
+        self.assertEqual(self.post(session="thread-second", request_body=second)[0].status, 200)
+
+        self.assertEqual(FakeBackend.requests, [
+            ("acct-a", "thread-first", first),
+            ("acct-a", "thread-second", second),
+            ("acct-a", "thread-first", first),
+            ("acct-b", "thread-first", first),
+            ("acct-b", "thread-second", second),
+        ])
 
     def test_failure_inside_the_stream_before_output_also_rotates(self):
         FakeBackend.behavior = {"acct-a": "stream-quota"}

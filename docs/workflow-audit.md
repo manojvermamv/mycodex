@@ -135,7 +135,13 @@ destination checks and readable deeply nested JSON failures preserve other accou
 optional startup failures, including nonblocking rejection of FIFO sources, warn and
 continue with the existing relay cache.
 
-The package now has 29 modules and 143 isolated tests. The guarded restart is pending:
+The model-choice audit confirms that cache sharing keeps user model defaults and saved
+thread choices intact. The proxy forwards the requested model and reasoning settings
+unchanged across account rotation. Two isolated regressions cover separate conversations
+using different models and unchanged settings/history after a catalogue copy. No runtime
+model override was found or introduced.
+
+The package now has 29 modules and 145 isolated tests. The guarded restart is pending:
 this conversation runs in the relay cgroup. An independent observer is armed and waiting
 for all active threads/tools and ten seconds idle. The live cache copy retained the relay
 PID, credentials, installation/environment identity, and paired client.

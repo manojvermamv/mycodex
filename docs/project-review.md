@@ -188,7 +188,7 @@ publication does not reload modules or restart the host service.
 
 ## v0.4.0 release follow-up — 2026-10-08
 
-The current package contains 29 modules and three test files (143 isolated tests).
+The current package contains 29 modules and three test files (145 isolated tests).
 The dated 26/28-module and 81/114-test counts above describe earlier reviews/releases.
 New coverage verifies quota-pause recovery at the next fresh request after persisted
 5-hour/weekly resets become due, configured priority restoration on explicit readiness,
@@ -196,6 +196,12 @@ completed-header live checks, overlapping response affinity, and no-order quota 
 Relay model-cache coverage checks saved sources, atomic
 catalogue-only copying, source/destination safety, deeply nested JSON failures, and
 bounded FIFO rejection and warning/continued startup on optional cache failure.
+
+The additional model-choice audit found no runtime override. Its two regressions verify
+unchanged user defaults and saved thread settings after sharing, plus distinct models and
+reasoning settings forwarded unchanged for separate conversations during rotation.
+Both checks detect an injected model override in isolated tests. This follow-up changes
+tests and documentation only.
 
 The v0.4.0 guarded restart is pending. This conversation runs in the relay cgroup;
 an independent observer is armed and waiting for all active

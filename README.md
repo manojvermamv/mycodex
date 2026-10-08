@@ -403,6 +403,11 @@ stop, restart, or re-pair the phone service. Before each later managed server la
 mycodex refreshes that same cache; if the optional copy cannot run, it logs a warning
 and starts the phone relay with its existing cache.
 
+Model selection stays with the user for each conversation. Sharing the catalogue keeps
+`config.toml`, saved thread models, and reasoning settings intact. Account rotation
+forwards the selected model and reasoning settings unchanged; mycodex never applies the
+catalogue's first model, or one shared model choice, to every thread.
+
 </details>
 
 <details>

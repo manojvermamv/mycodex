@@ -72,7 +72,7 @@ verified empty/ready-check histories and does not provide an atomic cross-client
 mycodex remote status
 mycodex remote pair
 mycodex remote clients
-mycodex remote models share work     # copy Plus catalogue; save source for later starts
+mycodex remote models share work     # share available models; keep each thread's model choice
 mycodex remote logs -n 40
 mycodex status --no-quota
 mycodex processes

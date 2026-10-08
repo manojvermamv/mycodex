@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Clarified that relay cache sharing preserves user model defaults and saved thread
+  choices. Account rotation forwards each thread's requested model and reasoning settings
+  unchanged. Two additional isolated regressions verify these guarantees; 145 tests pass.
+  This follow-up changes tests and documentation without changing runtime behavior.
+
 ## v0.4.0 — 2026-10-08
 
 ### Quota recovery and relay models

@@ -640,6 +640,36 @@ class ModelCacheShareTest(unittest.TestCase):
         self.assertEqual((self.target_home / 'models_cache.json').read_text(), '{"models":["plus"]}')
         self.assertEqual(self.cfg['remote']['models_source'], 'plus')
 
+    def test_model_cache_share_preserves_model_defaults_and_saved_thread_choices(self):
+        (self.source_home / 'models_cache.json').write_text('{"models":[{"slug":"catalogue-first","priority":0}]}')
+        source_config = self.source_home / 'config.toml'
+        source_config.write_text('model = "source-default"\n')
+        shared_config = self.box.shared / 'config.toml'
+        shared_config.write_text('model = "user-default"\nmodel_reasoning_effort = "high"\n')
+        (self.target_home / 'config.toml').symlink_to(shared_config)
+        sessions = self.box.shared / 'sessions'
+        sessions.mkdir()
+        for name, model in (('first', 'chosen-first'), ('second', 'chosen-second')):
+            (sessions / f'{name}.jsonl').write_text(json.dumps({
+                'type': 'turn_context', 'payload': {'model': model, 'effort': 'high'},
+            }) + '\n')
+        preserved = {path: path.read_bytes() for path in [source_config, shared_config, *sessions.iterdir()]}
+        expected_settings = json.loads(json.dumps(self.cfg))
+        expected_settings['remote']['models_source'] = 'plus'
+
+        with mock.patch.object(config, 'load', return_value=self.cfg), \
+             mock.patch.object(config, 'editing', self.editing), \
+             mock.patch.object(remote, '_systemctl') as lifecycle, \
+             mock.patch.object(appserver, 'AppServer') as rpc, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(remote_cmd.share_models(None), 0)
+
+        self.assertEqual({path: path.read_bytes() for path in preserved}, preserved)
+        self.assertTrue((self.target_home / 'config.toml').is_symlink())
+        self.assertEqual(self.cfg, expected_settings)
+        lifecycle.assert_not_called()
+        rpc.assert_not_called()
+
     def test_model_cache_share_explicit_source_overrides_active_profile(self):
         other_home = self.box.home('other')
         other_home.mkdir()

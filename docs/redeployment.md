@@ -146,7 +146,7 @@ publication leaves existing processes running with their loaded metadata.
 
 ## v0.4.0 handoff pending — 2026-10-08
 
-The current candidate contains 29 package modules and 143 isolated tests. The completed
+The current candidate contains 29 package modules and 145 isolated tests. The completed
 2026-10-05 deployment and 81/114-test evidence above belong to earlier snapshots.
 The v0.4.0 guarded restart has not completed: this conversation is in the relay cgroup.
 An independent observer is armed, waiting for all active
@@ -170,3 +170,8 @@ The current job's unit name and private status path are supplied in the deployme
 handoff. Its `waiting_for_idle` phase means the restart has not occurred. Keep this
 distinct from `completed` with `outcome: deployed`, which requires the reconnect and
 two-minute health checks above.
+
+The subsequent model-choice audit adds two isolated regressions and documentation only.
+It leaves the candidate's application files and the armed observer's source hashes
+unchanged. Cache sharing preserves model defaults and saved thread choices; account
+rotation preserves each requested model and reasoning settings.
