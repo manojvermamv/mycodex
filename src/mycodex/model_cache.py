@@ -31,7 +31,7 @@ def _snapshot(source: Path) -> bytes:
                 raise OSError("model cache is not a regular file")
             data = handle.read()
         json.loads(data.decode("utf-8"), parse_constant=_invalid_constant)
-    except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, RecursionError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise ModelCacheError("the selected profile has no readable valid model cache") from exc
     return data
 

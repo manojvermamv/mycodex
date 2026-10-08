@@ -664,3 +664,26 @@ class ModelCacheShareTest(unittest.TestCase):
         lifecycle.assert_not_called()
         self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
         self.assertIn('model cache sync failed; continuing', err.getvalue())
+
+    def test_remote_start_continues_when_deeply_nested_cache_json_fails(self):
+        write_auth(self.source_home, 'plus-account', 'plus@example.com')
+        write_auth(self.target_home, 'relay-account', 'relay@example.com')
+        (self.source_home / 'models_cache.json').write_text('[' * 10_000 + '0' + ']' * 10_000)
+        target_cache = self.target_home / 'models_cache.json'
+        target_cache.write_text('{"models":["old"]}')
+        self.cfg['remote']['models_source'] = 'plus'
+
+        with mock.patch.object(config, 'load', return_value=self.cfg), \
+             mock.patch.object(remote, 'run_server', return_value=0) as start_server, \
+             mock.patch.object(remote, '_systemctl') as lifecycle, \
+             contextlib.redirect_stderr(io.StringIO()) as err:
+            try:
+                result = remote.serve()
+            except RecursionError as exc:
+                self.fail(f'deeply nested cache escaped automatic sync: {exc}')
+
+        self.assertEqual(result, 0)
+        start_server.assert_called_once()
+        lifecycle.assert_not_called()
+        self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
+        self.assertIn('model cache sync failed; continuing', err.getvalue())
