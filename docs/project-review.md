@@ -216,3 +216,15 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+## v0.4.2 weekly reset follow-up — 2026-10-12
+
+Automatic spending now requires 0% weekly quota and at least one credit, follows
+configured priority including weekly-paused accounts, and saves authoritative credit
+balances. A locked recheck prevents spending after quota or credits change. A successful
+weekly reset keeps its prompt on the recovered account, even with low five-hour headroom.
+Five-hour limits alone preserve credits. The 166-test isolated suite covers these cases;
+real credits were not consumed for verification. The approved host deployment completed
+at 08:42:13 UTC with no rollback, retained pairing/projects and independent processes,
+and enabled the policy. See [redeployment.md](redeployment.md#weekly-only-reset-deployment--2026-10-12).
+The other findings still marked open remain unresolved.

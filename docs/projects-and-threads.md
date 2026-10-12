@@ -9,7 +9,7 @@ partial-operation, and concurrency limits.
 Model selection remains user controlled for each conversation. Sharing the relay's
 model catalogue and switching accounts preserve selected models and reasoning settings;
 they do not apply one model to every project thread. See the [command guide](cli-guide.md)
-and [v0.4.1 changes](../CHANGELOG.md).
+and [v0.4.2 changes](../CHANGELOG.md).
 
 ## How Codex files threads under projects
 

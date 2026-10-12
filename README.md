@@ -19,8 +19,8 @@ The Codex you get is the unmodified original. mycodex is a small, dependency-fre
 tool around it: it prepares each account's Codex home, runs a local rotation proxy in
 front of the ChatGPT backend, and manages the remote-control service.
 
-The current version is **v0.4.1** (2026-10-08). See the [changelog](CHANGELOG.md),
-[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.1), and
+The current version is **v0.4.2** (2026-10-12). See the [changelog](CHANGELOG.md),
+[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.2), and
 [everyday commands](docs/cheatsheet.md). The complete source, tests, and public docs
 are versioned together.
 The [restart and recovery plan](docs/redeployment.md) explains a guarded deployment
@@ -674,7 +674,7 @@ mycodex is an independent project and is not affiliated with OpenAI.
 
 ## Release verification
 
-Run `python3 -B tools/run_tests.py` from a clone to execute the 145-test suite in
+Run `python3 -B tools/run_tests.py` from a clone to execute the 166-test suite in
 temporary homes with external HTTP, external subprocess launches, and service signals
 blocked. FIFO regressions use bounded fixture workers; local fake backends handle requests.
 The tests do not consume real reset credits or operate live services.
@@ -685,7 +685,7 @@ monitoring and removed its own unit. A later read-only check confirmed the PATH 
 service launcher, source snapshot, proxy, and protected processes. This is the historical
 v0.3.0 deployment.
 
-As of 2026-10-08, v0.4.1 contains 29 package modules. The live Plus-cache copy was
+At the 2026-10-08 v0.4.1 release, the package contained 29 modules. The live Plus-cache copy was
 verified with the relay PID, credentials, identity, and paired client preserved.
 The earlier v0.4.0 waiting job was cancelled before restarting and superseded by the
 v0.4.1 deployment and release handoff. Updating source alone does not reload the proxy.
@@ -699,6 +699,15 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+The weekly-only reset policy in **v0.4.2** was deployed and enabled at
+**2026-10-12 08:42:13 UTC**. The independent observer completed its two-minute monitor
+with no rollback. Fresh checks confirm the connected relay/proxy, original phone
+identity/pairing and project threads, and preserved independent Codex processes.
+The release has 29 modules and 166 isolated tests. Version/docs publication leaves
+the running service online with its already loaded weekly-only behavior; its loaded
+version metadata changes on a later planned restart. See the
+[deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
 
 R01/R06 and the other open review items are explicitly retained in the
 [project review](docs/project-review.md). Personal host notes, runtime state, credentials,

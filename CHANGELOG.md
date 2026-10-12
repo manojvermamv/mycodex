@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.2 — 2026-10-12
 
 - Automatic reset-credit redemption now requires confirmed **0% weekly quota and
   at least one available credit**. A normal exhausted 5-hour window never qualifies,
@@ -11,9 +11,17 @@
   the redemption lock prevents spending after weekly quota or credit availability changes.
 - A successful weekly reset keeps its prompt on the recovered account even below
   the five-hour headroom threshold. Updated command help and usage documentation.
-- The approved host deployment enables weekly-only automatic redemption after the
-  old proxy stops. The independent observer verifies reconnect and restores the previous
-  code and setting if recovery is needed. See the [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
+- The approved host deployment completed at **2026-10-12 08:42:13 UTC**, enabling
+  weekly-only automatic redemption after stopping the old proxy. Its two-minute
+  health monitor finished with no misses or rollback attempts. Fresh checks confirm
+  the connected relay/proxy, retained phone identity/pairing and project threads,
+  and preserved independent Codex processes. See the [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
+- **166 isolated application tests** pass. The frozen recovery version passed 145
+  tests; 30 private observer checks cover lifecycle and policy activation/recovery.
+  Real credits were not spent for verification. Automatic spending remains off by
+  default in new installations; this host's approved setting is on.
+- Release publication updates version metadata and documentation. It does not
+  restart the already deployed relay or change its loaded weekly-only behavior.
 
 ## v0.4.1 — 2026-10-08
 

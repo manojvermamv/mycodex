@@ -245,3 +245,15 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+## v0.4.2 weekly reset policy — 2026-10-12
+
+The user-approved policy prioritizes the configured account sequence: a weekly-exhausted
+account with a credit gets one automatic reset before moving to the next account when
+it cannot recover. Five-hour limits alone never spend credits. Live checks under the
+account lock and saved authoritative balances protect credit use. A successful reset
+keeps the request on the recovered account, including with low five-hour headroom.
+The 166-test suite is isolated from real accounts and services. The guarded host deployment
+completed at 08:42:13 UTC without rollback and preserved pairing, projects, and independent
+Codex processes; see [the deployment record](redeployment.md#weekly-only-reset-deployment--2026-10-12).
+Publication updates version/docs while the relay remains online with this deployed behavior.

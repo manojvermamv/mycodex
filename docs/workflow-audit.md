@@ -146,7 +146,7 @@ unchanged across account rotation. Two isolated regressions cover separate conve
 using different models and unchanged settings/history after a catalogue copy. No runtime
 model override was found or introduced.
 
-The package now has 29 modules and 145 isolated tests. The live cache copy retained the
+At the v0.4.1 release, the package had 29 modules and 145 isolated tests. The live cache copy retained the
 relay PID, credentials, installation/environment identity, and paired client. The earlier
 v0.4.0 waiting job was cancelled before restarting and superseded by v0.4.1.
 Updating source alone does not reload the proxy. R01/R06 and the other documented issues
@@ -161,3 +161,19 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+## v0.4.2 weekly-only credit verification — 2026-10-12
+
+The approved policy requires 0% weekly quota and at least one credit, uses configured
+account order, and records the updated balance. The live eligibility recheck under the
+redemption lock prevents stale or concurrent decisions from spending an extra credit.
+Five-hour-only exhaustion never qualifies, either before routing or after a rejection.
+A weekly reset that confirms readiness keeps its prompt on that account even below the
+five-hour headroom threshold. The complete isolated suite passes 166 tests.
+
+Deployment completed at **08:42:13 UTC**, with no rollback and a completed two-minute
+monitor. The host setting is enabled. Fresh checks confirm the connected relay/proxy,
+retained identity/pairing and project threads, and preserved independent processes.
+Thirty private observer checks verify lifecycle and policy transitions; the frozen
+recovery version passed 145 tests. Verification spent no real credits. See
+[redeployment.md](redeployment.md#weekly-only-reset-deployment--2026-10-12).

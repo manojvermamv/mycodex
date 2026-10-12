@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.4.1**, dated 2026-10-08.
+This guide targets **v0.4.2**, dated 2026-10-12.
 The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
 for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
 
@@ -316,11 +316,14 @@ rm -rf ~/mycodex
 - [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
 - [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
 
-## v0.4.1 validation and deployment — 2026-10-08
+## v0.4.2 validation and deployment — 2026-10-12
 
 For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
-145 isolated tests. The package has 29 modules. The successful 2026-10-05 restart was
-for v0.3.0; the earlier v0.4.0 waiting job was cancelled before restarting.
+166 isolated tests. The package has 29 modules. The weekly-only reset policy was
+deployed and enabled at **2026-10-12 08:42:13 UTC**, with no rollback and a completed
+two-minute monitor. Fresh checks preserve the phone identity/pairing, projects, and
+independent Codex processes. The [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12)
+records the observer and recovery checks. The following v0.4.1 record is historical.
 
 <!-- mycodex-deployment-status:start -->
 The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
@@ -332,5 +335,6 @@ working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
 
-New CLI commands report v0.4.1. Updating source alone does not reload the running proxy;
-already-running processes retain their loaded modules until a guarded restart.
+New CLI commands report v0.4.2. The relay already runs the approved weekly-only policy;
+release metadata and docs do not require another restart. Already-running processes
+retain their loaded version metadata until a later planned restart.

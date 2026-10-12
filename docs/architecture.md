@@ -4,7 +4,7 @@ This document explains how mycodex works internally and why each mechanism exist
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
 The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.1** on 2026-10-08 (29 package modules, 145 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+**v0.4.2** on 2026-10-12 (29 package modules, 166 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -489,7 +489,7 @@ part of source/help updates.
 
 ## Published release and host verification
 
-[Changelog](../CHANGELOG.md) records v0.4.1 verification and the v0.4.0 behavior changes.
+[Changelog](../CHANGELOG.md) records v0.4.2 weekly reset policy and release verification.
 The test runner is committed at `tools/run_tests.py`; deployment observer scripts and
 artifacts remain private runtime files. They are described in
 [redeployment.md](redeployment.md), not exposed as a new CLI lifecycle guarantee.
@@ -501,8 +501,8 @@ deployment during read-only rechecks. That completed deployment belongs to v0.3.
 
 The 2026-10-08 v0.4.0 release was verified with 29 modules and 143 isolated tests;
 the subsequent model-choice audit brings the suite to 145 tests. Its waiting deployment
-job was cancelled before restarting and superseded by v0.4.1. New invocations report
-0.4.1; updating source alone does not reload the running proxy.
+job was cancelled before restarting and superseded by v0.4.1. At that release, new invocations
+reported 0.4.1; updating source alone does not reload the running proxy.
 
 <!-- mycodex-deployment-status:start -->
 The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
@@ -513,3 +513,10 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+The v0.4.2 weekly-only reset policy was deployed and enabled on 2026-10-12 at
+08:42:13 UTC. Its observer completed two-minute monitoring without rollback; fresh
+checks retain pairing, projects, proxy health, and independent Codex processes.
+The full suite now has 166 isolated tests. Release publication changes only version
+metadata and docs after this deployment; the running service keeps its loaded metadata.
+See the [current deployment record](redeployment.md#weekly-only-reset-deployment--2026-10-12).

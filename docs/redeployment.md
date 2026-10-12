@@ -237,3 +237,9 @@ and proxy, enabled weekly-only redemption, original phone identity/pairing and t
 conversation/project records, and both independent Codex processes. The saved account
 priority and user model choices were preserved. No credit was redeemed for verification.
 <!-- mycodex-weekly-reset-deployment:end -->
+
+The v0.4.2 release publishes this already deployed policy, its 166-test suite, and
+the verified host record. The CLI reports 0.4.2 after publication; the running relay
+retains its loaded version metadata until a later planned restart. Publishing this
+version does not repeat the restart or spend a reset credit. Both temporary host
+services and the policy activation hook were removed after completion.
