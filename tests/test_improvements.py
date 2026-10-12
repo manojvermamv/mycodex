@@ -221,15 +221,12 @@ class HeadroomTest(unittest.TestCase):
         state.save_quota('a', quota.to_dict(snapshot))
         self.assertEqual(self.proxy.plan(None, None)[0].name, 'b')
 
-    def test_opt_in_reset_precedes_proactive_rotation_at_zero(self):
+    def test_opt_in_keeps_credits_for_weekly_limits_when_only_five_hours_are_empty(self):
         self.remember('a', 0); self.remember('b', 100)
         self.cfg['rotation']['auto_redeem'] = True
-        def recover(profile):
-            self.remember(profile.name, 100)
-            return True
-        with mock.patch.object(redemption, 'try_auto', side_effect=recover) as redeem:
-            self.assertEqual(self.proxy.plan(None, None)[0].name, 'a')
-        redeem.assert_called_once()
+        with mock.patch.object(redemption, 'try_auto') as redeem:
+            self.assertEqual(self.proxy.plan(None, None)[0].name, 'b')
+        redeem.assert_not_called()
 
     def test_non_model_requests_do_not_trigger_proactive_routing(self):
         self.remember('a', 2); self.remember('b', 100)
@@ -479,11 +476,72 @@ class RedemptionTest(unittest.TestCase):
         self.assertEqual(result['outcome'], 'noCredit')
         self.assertIn('a', state.blocks(max_age=0))
 
-    def test_auto_redeem_preserves_credits_when_other_windows_are_exhausted(self):
-        q = quota.Quota('a', True, 'limited', reset_credits=1, windows=[quota.Window('5h', 18000, 100, 1), quota.Window('weekly', 604800, 100, 2)])
-        with mock.patch.object(quota, 'fetch', return_value=q), mock.patch.object(redemption, 'consume') as consume:
+    def auto_server(self, weekly=0, short=50, credits=1, account='acct-a'):
+        before = {'accountId': account, 'ordinaryUsageAllowed': False,
+                  'rateLimits': {'primary': {'usedPercent': 100-short, 'windowDurationMins': 300},
+                                 'secondary': {'usedPercent': 100-weekly, 'windowDurationMins': 10080}},
+                  'rateLimitResetCredits': {'availableCount': credits}}
+        after = {'accountId': 'acct-a', 'ordinaryUsageAllowed': True,
+                 'rateLimits': {'primary': {'usedPercent': 0, 'windowDurationMins': 300},
+                                'secondary': {'usedPercent': 0, 'windowDurationMins': 10080}},
+                 'rateLimitResetCredits': {'availableCount': max(0, (credits or 0)-1)}}
+        server = RPC({'account/rateLimitResetCredit/consume': {'outcome': 'reset'}})
+        server.responses['account/rateLimits/read'] = lambda _: (
+            after if any(m == 'account/rateLimitResetCredit/consume' for m, _ in server.calls) else before)
+        return quota.from_rpc('a', before), server
+
+    def test_automatic_redemption_requires_zero_weekly_quota(self):
+        for short in (0, 50):
+            with self.subTest(short=short):
+                q, server = self.auto_server(short=short)
+                with mock.patch.object(quota, 'fetch', return_value=q), mock.patch.object(redemption, 'AccountServer', return_value=server):
+                    self.assertTrue(redemption.try_auto(self.profile))
+                self.assertEqual(sum(m == 'account/rateLimitResetCredit/consume' for m, _ in server.calls), 1)
+                self.assertEqual(quota.stored('a').reset_credits, 0)
+
+    def test_five_hour_exhaustion_never_spends_credits_with_weekly_headroom(self):
+        for weekly in (0.1, 50, 100):
+            with self.subTest(weekly=weekly):
+                q, server = self.auto_server(weekly=weekly, short=0)
+                with mock.patch.object(quota, 'fetch', return_value=q), mock.patch.object(redemption, 'AccountServer', return_value=server):
+                    self.assertFalse(redemption.try_auto(self.profile))
+                self.assertEqual(server.calls, [])
+
+    def test_missing_weekly_quota_or_credit_count_never_spends(self):
+        cases = [self.auto_server(credits=0)[0], self.auto_server(credits=None)[0],
+                 quota.Quota('a', True, 'limited', reset_credits=1, windows=[quota.Window('5h', 18000, 100, None)]),
+                 quota.Quota('a', False, 'unknown', reset_credits=1)]
+        for q in cases:
+            with self.subTest(q=q):
+                server = self.server()
+                with mock.patch.object(quota, 'fetch', return_value=q), mock.patch.object(redemption, 'AccountServer', return_value=server):
+                    self.assertFalse(redemption.try_auto(self.profile))
+                self.assertEqual(server.calls, [])
+
+    def test_locked_recheck_prevents_spending_after_weekly_quota_or_credits_change(self):
+        stale, _ = self.auto_server(short=0)
+        for weekly, credits in ((50, 1), (0, 0)):
+            with self.subTest(weekly=weekly, credits=credits):
+                _, server = self.auto_server(weekly=weekly, short=0, credits=credits)
+                with mock.patch.object(quota, 'fetch', return_value=stale), mock.patch.object(redemption, 'AccountServer', return_value=server):
+                    self.assertFalse(redemption.try_auto(self.profile))
+                self.assertEqual([m for m, _ in server.calls], ['account/rateLimits/read'])
+
+    def test_stale_concurrent_checks_cannot_spend_two_credits_for_one_reset(self):
+        stale, server = self.auto_server(credits=2)
+        with mock.patch.object(quota, 'fetch', return_value=stale), mock.patch.object(redemption, 'AccountServer', return_value=server):
+            self.assertTrue(redemption.try_auto(self.profile))
             self.assertFalse(redemption.try_auto(self.profile))
-        consume.assert_not_called()
+        self.assertEqual(sum(m == 'account/rateLimitResetCredit/consume' for m, _ in server.calls), 1)
+        self.assertEqual(quota.stored('a').reset_credits, 1)
+
+    def test_automatic_snapshot_account_mismatch_is_rejected_before_spending(self):
+        q, _ = self.auto_server()
+        _, server = self.auto_server(account='wrong-account')
+        with mock.patch.object(quota, 'fetch', return_value=q), mock.patch.object(redemption, 'AccountServer', return_value=server):
+            with self.assertRaises(appserver.AppServerError):
+                redemption.try_auto(self.profile)
+        self.assertEqual([m for m, _ in server.calls], ['account/rateLimits/read'])
 
 
 class AutoRedemptionProxyTest(unittest.TestCase):
@@ -512,6 +570,196 @@ class AutoRedemptionProxyTest(unittest.TestCase):
             response, body = self.post()
         self.assertEqual(response.status, 200)
         self.assertEqual(self.accounts(), ['acct-a', 'acct-b'])
+
+
+class WeeklyCreditOrderTest(unittest.TestCase):
+    tearDown = core.ProxyRotationTest.tearDown
+    post = core.ProxyRotationTest.post
+    accounts = core.ProxyRotationTest.accounts
+
+    def setUp(self):
+        core.ProxyRotationTest.setUp(self)
+        self.cfg = self.proxy.pool()[1]
+        self.cfg['rotation'].update(auto_redeem=True, order=['a', 'b'], min_quota_headroom=0)
+        self.usage = {}
+        self.spent = []
+        self.failed = set()
+        self.after_short = 100
+        for name in ('a', 'b'):
+            self.save(name)
+        self.patches[1].stop()
+        self.patches[1] = mock.patch.object(quota, 'fetch', side_effect=self.fetch)
+        self.patches[1].start()
+        self.patches.append(mock.patch.object(redemption, 'AccountServer', side_effect=self.server))
+        self.patches[-1].start()
+
+    def save(self, name, weekly=100, short=100, credits=1, paused=False, reset_at=None):
+        now = int(time.time())
+        self.usage[name] = {
+            'accountId': 'acct-' + name, 'ordinaryUsageAllowed': weekly > 0 and short > 0,
+            'rateLimits': {'primary': {'usedPercent': 100-short, 'windowDurationMins': 300, 'resetsAt': now+18000},
+                           'secondary': {'usedPercent': 100-weekly, 'windowDurationMins': 10080,
+                                         'resetsAt': reset_at if reset_at is not None else now+604800}},
+            'rateLimitResetCredits': {'availableCount': credits},
+        }
+        self.fetch(profiles.Profile(name, self.box.home(name)))
+        if weekly <= 0 or short <= 0:
+            FakeBackend.behavior['acct-' + name] = 'quota'
+        else:
+            FakeBackend.behavior.pop('acct-' + name, None)
+        if paused:
+            state.block(name, now+604800, 'quota: exhausted')
+
+    def fetch(self, profile, *args, **kwargs):
+        return quota._remember(quota.from_rpc(profile.name, self.usage[profile.name]))
+
+    def server(self, home, profile):
+        def consume(params):
+            self.assertTrue(params['idempotencyKey'])
+            if profile.name in self.failed:
+                raise appserver.AppServerError('reset unavailable')
+            self.spent.append(profile.name)
+            credits = self.usage[profile.name]['rateLimitResetCredits']['availableCount']
+            self.save(profile.name, short=self.after_short, credits=credits-1)
+            return {'outcome': 'reset'}
+        return RPC({'account/rateLimits/read': lambda _: self.usage[profile.name],
+                    'account/rateLimitResetCredit/consume': consume})
+
+    def test_fresh_prompt_redeems_a_paused_higher_priority_account(self):
+        self.save('a', weekly=0, credits=2, paused=True)
+        self.proxy.current = 'b'
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, ['a'])
+        self.assertNotIn('a', state.quota_pauses())
+
+    def test_both_weekly_exhausted_accounts_spend_only_first_in_configured_order(self):
+        self.cfg['rotation']['order'] = ['b', 'a']
+        for name in ('a', 'b'):
+            self.save(name, weekly=0, credits=2, paused=True)
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, ['b'])
+        self.assertEqual(quota.stored('a').reset_credits, 2)
+
+    def test_zero_credits_skip_to_next_account_in_order(self):
+        self.save('a', weekly=0, credits=0, paused=True)
+        self.save('b', weekly=0, credits=1, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, ['b'])
+
+    def test_ready_higher_priority_account_preserves_lower_priority_credits(self):
+        self.save('b', weekly=0, credits=2, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, [])
+
+    def test_live_readiness_restores_priority_without_spending_lower_account_credits(self):
+        self.save('a', weekly=0, paused=True)
+        self.save('b', weekly=0, paused=True)
+        stale = quota.stored('a')
+        self.save('a')
+        state.save_quota('a', quota.to_dict(stale))
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, [])
+        self.assertNotIn('a', state.quota_pauses())
+
+    def test_successful_reset_does_not_spend_another_credit_for_low_five_hour_headroom(self):
+        self.cfg['rotation']['min_quota_headroom'] = 5
+        self.after_short = 2
+        self.save('a', weekly=0, paused=True)
+        self.save('b', weekly=0, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, ['a'])
+        self.assertEqual(quota.stored('b').reset_credits, 1)
+
+    def test_successful_weekly_reset_keeps_priority_even_with_a_healthy_backup(self):
+        self.cfg['rotation']['min_quota_headroom'] = 5
+        self.after_short = 2
+        self.save('a', weekly=0, paused=True)
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, ['a'])
+
+    def test_reactive_weekly_rejection_redeems_before_retrying_the_same_account(self):
+        ready = quota.stored('a')
+        self.save('a', weekly=0)
+        state.save_quota('a', quota.to_dict(ready))
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-a', 'acct-a'])
+        self.assertEqual(self.spent, ['a'])
+
+    def test_reactive_five_hour_rejection_rotates_without_spending(self):
+        ready = quota.stored('a')
+        self.save('a', short=0)
+        state.save_quota('a', quota.to_dict(ready))
+        response, _ = self.post()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.accounts(), ['acct-a', 'acct-b'])
+        self.assertEqual(self.spent, [])
+
+    def test_account_credit_counts_are_exhausted_in_order_across_weekly_limits(self):
+        self.save('a', weekly=0, credits=2, paused=True)
+        self.save('b', weekly=0, credits=1, paused=True)
+        self.post()
+        self.assertEqual(quota.stored('a').reset_credits, 1)
+        self.proxy.reset_checks.clear()
+        self.save('a', weekly=0, credits=1, paused=True)
+        self.post()
+        self.assertEqual(quota.stored('a').reset_credits, 0)
+        self.proxy.reset_checks.clear()
+        self.save('a', weekly=0, credits=0, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-a', 'acct-a', 'acct-b'])
+        self.assertEqual(self.spent, ['a', 'a', 'b'])
+
+    def test_redemption_failure_falls_back_without_clearing_quota_pause(self):
+        self.save('a', weekly=0, paused=True)
+        self.failed.add('a')
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, [])
+        self.assertIn('a', state.quota_pauses())
+
+    def test_due_weekly_reset_still_exhausted_can_use_a_credit(self):
+        self.save('a', weekly=0, paused=True, reset_at=int(time.time())-1)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-a'])
+        self.assertEqual(self.spent, ['a'])
+
+    def test_five_hour_pause_keeps_all_credits(self):
+        self.save('a', short=0, credits=2, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, [])
+        self.assertEqual(quota.stored('a').reset_credits, 2)
+
+    def test_disabled_auto_redemption_leaves_paused_accounts_alone(self):
+        self.cfg['rotation']['auto_redeem'] = False
+        self.save('a', weekly=0, paused=True)
+        self.post()
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, [])
+
+    def test_in_progress_backup_turn_does_not_spend_higher_priority_credits(self):
+        self.save('a', weekly=0, paused=True)
+        self.proxy.turns['active'] = ('b', time.time())
+        self.post(headers={'x-codex-turn-state': 'active'})
+        self.assertEqual(self.accounts(), ['acct-b'])
+        self.assertEqual(self.spent, [])
+
+    def test_non_model_selection_does_not_spend_credits(self):
+        self.save('a', weekly=0, paused=True)
+        self.assertEqual(self.proxy.plan(None, None, fresh_turn=False)[0].name, 'b')
+        self.assertEqual(self.spent, [])
 
 
 class RolloutRepairTest(unittest.TestCase):

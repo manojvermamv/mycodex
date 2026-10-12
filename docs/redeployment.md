@@ -206,3 +206,30 @@ preserved independent Codex processes. The service uses the verified v0.4.1
 working-tree launcher; 145 isolated application tests pass. User model choices
 remain unchanged. Private observer/recovery artifacts are excluded from Git.
 <!-- mycodex-deployment-status:end -->
+
+## Weekly-only reset deployment — 2026-10-12
+
+The approved candidate automatically redeems one credit only when weekly quota reaches
+0% and the selected account has at least one credit. It follows the saved account order,
+including weekly-paused accounts, and keeps a recovered prompt on that account. Credit
+balances are saved from authoritative replies. Five-hour limits alone spend nothing.
+The candidate passes 166 isolated application tests; the frozen v0.4.1 recovery version
+passes 145. The private observer includes 29 isolated lifecycle/policy checks.
+
+Before deployment, automatic spending remains disabled. A temporary systemd
+`ExecStartPre` hook enables it only after the old supervisor has stopped and before
+the verified candidate starts. Recovery uses the same timing to restore the previous
+setting before starting the frozen older code. The full saved settings, source hashes,
+phone identity/pairing, three conversation/project records, and two independent Codex
+process identities are guarded. The temporary policy hook is removed when observation
+finishes; saved priority, relay identity and user model selections remain in place.
+
+The host observer runs independently of this conversation and waits for the current
+turn/tools and ten seconds of quiet before acting. It permits ninety seconds for
+connection checks, requires six seconds of stable health, and monitors for two minutes.
+The existing admission/drain race and network-related reconnect limitations still apply.
+
+<!-- mycodex-weekly-reset-deployment:start -->
+Deployment is prepared; the guarded observer has not yet recorded a successful restart.
+The durable host record is `state/deployments/20261012T081612Z/status.json`.
+<!-- mycodex-weekly-reset-deployment:end -->

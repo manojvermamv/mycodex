@@ -788,11 +788,12 @@ class RotationProxy:
         blocked = state.blocks()
         usable = [p for p in members if p.name not in blocked and p.name not in unconfirmed]
         threshold = cfg["rotation"].get("min_quota_headroom", 0)
-        if threshold and not turn_owner and fresh_turn:
+        automatic = cfg["rotation"].get("auto_redeem", False)
+        if (threshold or automatic) and not turn_owner and fresh_turn:
             # Refresh stale snapshots at a fresh-turn boundary, never during a sticky turn.
             stale = [p for p in usable if quota.cached(p.name, max_age=60) is None]
             quota.fetch_all(stale, timeout=3)
-        order = [n for n in cfg["rotation"]["order"] if n in {p.name for p in usable}]
+        order = [n for n in cfg["rotation"]["order"] if n in {p.name for p in members}]
 
         with self.lock:
             session_owner = self._lookup(self.sessions, session)
@@ -808,6 +809,12 @@ class RotationProxy:
             affinity_rank = 0 if p.name in (session_owner, current) else 1
             return (order_rank, -headroom, affinity_rank, p.name)
 
+        redeemed = None
+        if automatic and fresh_turn and not turn_owner:
+            redeemed = self._redeem_weekly_in_order(sorted(members, key=rank), unconfirmed, threshold)
+            blocked = state.blocks()
+            usable = [p for p in members if p.name not in blocked and p.name not in unconfirmed]
+        order = [n for n in order if n in {p.name for p in usable}]
         by_name = {p.name: p for p in usable}
         result: list[Profile] = []
         if turn_owner in by_name:
@@ -817,7 +824,7 @@ class RotationProxy:
                 if name in by_name and by_name[name] not in result:
                     result.append(by_name[name])
         result += [p for p in sorted(usable, key=rank) if p not in result]
-        if not turn_owner and threshold and fresh_turn and result:
+        if not turn_owner and threshold and fresh_turn and result and result[0].name != redeemed:
             def headroom(p: Profile) -> float | None:
                 cached = quota.cached(p.name, max_age=300)
                 if not cached or not cached.ok:
@@ -827,8 +834,6 @@ class RotationProxy:
                     return None
                 return short.remaining
             current_headroom = headroom(result[0])
-            if current_headroom == 0 and cfg["rotation"].get("auto_redeem") and self.redeem(result[0]):
-                current_headroom = headroom(result[0])
             if current_headroom is not None and current_headroom < threshold:
                 healthy = []
                 for member in result[1:]:
@@ -844,6 +849,37 @@ class RotationProxy:
             # everything is blocked: ask the account that frees up first, so Codex gets a real answer
             result = sorted(fallback, key=lambda p: blocked.get(p.name, (0, ""))[0])[:1]
         return result
+
+    def _redeem_weekly_in_order(self, ordered: list[Profile], unconfirmed: set[str], threshold: float) -> str | None:
+        """Check paused weekly accounts in priority order; stop at a usable account."""
+        from . import redemption
+        for profile in ordered:
+            blocked = state.blocks()
+            pause = blocked.get(profile.name)
+            if pause and not pause[1].startswith("quota:"):
+                continue
+            saved = quota.stored(profile.name)
+            if redemption.auto_eligible(saved):
+                recovered = self.redeem(profile)
+                blocked = state.blocks()
+                if recovered:
+                    unconfirmed.discard(profile.name)
+                    if profile.name not in blocked:
+                        return profile.name
+                saved = quota.stored(profile.name)
+                if saved and saved.eligible and profile.name not in blocked:
+                    unconfirmed.discard(profile.name)
+            if profile.name in blocked or profile.name in unconfirmed:
+                continue
+            if saved and saved.status not in ("ready", "unknown"):
+                continue
+            short = next((w for w in saved.windows if w.seconds == 18000), None) if saved else None
+            if threshold and short and short.remaining < threshold \
+                    and (not short.reset_at or short.reset_at > time.time()):
+                continue
+            # Do not spend another account's credit while this one can serve the request.
+            break
+        return None
 
     def _reconcile_due_quota_pauses(self, members: list[Profile]) -> set[str]:
         """Refresh reset-due quota pauses before ranking a new model request."""

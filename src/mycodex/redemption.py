@@ -51,28 +51,47 @@ def _lock(profile: profiles.Profile) -> Iterator[None]:
         yield
 
 
+def auto_eligible(q: quota.Quota | None) -> bool:
+    """Automatic spending requires a known exhausted weekly window and a credit."""
+    return bool(q and q.ok and q.status == "limited" and (q.reset_credits or 0) >= 1
+                and any(w.seconds == 604800 and w.remaining <= 0 for w in q.windows))
+
+
+def _snapshot(profile: profiles.Profile, reply: dict[str, Any]) -> quota.Quota:
+    q = quota.from_rpc(profile.name, reply)
+    expected = auth.claims(profile.home).get("account_id")
+    if q.account_id and expected and q.account_id != expected:
+        raise appserver.AppServerError("reset snapshot belongs to a different account; pause was left unchanged")
+    state.save_quota(profile.name, quota.to_dict(q))
+    return q
+
+
 def consume(profile: profiles.Profile, idempotency_key: str | None = None,
-            credit_id: str | None = None) -> dict[str, Any]:
+            credit_id: str | None = None, *, automatic: bool = False) -> dict[str, Any]:
     if idempotency_key is not None and not idempotency_key.strip():
         raise appserver.AppServerError("idempotency key must not be empty")
     if credit_id is not None and not credit_id.strip():
         raise appserver.AppServerError("credit id must not be empty")
     with _lock(profile), tempfile.TemporaryDirectory(prefix="mycodex-account-") as scratch:
-        key = idempotency_key or state.reset_attempt(profile.name)
-        params = {"idempotencyKey": key}
-        if credit_id:
-            params["creditId"] = credit_id
         with AccountServer(Path(scratch), profile) as server:
+            if automatic:
+                # Recheck under the account lock: another prompt may already have reset it.
+                before = _snapshot(profile, server.result("account/rateLimits/read"))
+                if not auto_eligible(before):
+                    if before.eligible:
+                        state.clear_quota_pause(profile.name)
+                    return {"profile": profile.name, "outcome": "skipped", "idempotency_key": None,
+                            "quota": quota.to_dict(before)}
+            key = idempotency_key or state.reset_attempt(profile.name)
+            params = {"idempotencyKey": key}
+            if credit_id:
+                params["creditId"] = credit_id
             response = check.object_value(server.result("account/rateLimitResetCredit/consume", params), "reset reply")
             outcome = response.get("outcome")
             if outcome not in ("reset", "alreadyRedeemed", "nothingToReset", "noCredit"):
                 raise appserver.AppServerError("reset redemption returned an unknown outcome; retry with the same key")
             snapshot = server.result("account/rateLimits/read")
-        q = quota.from_rpc(profile.name, snapshot)
-        expected = auth.claims(profile.home).get("account_id")
-        if q.account_id and expected and q.account_id != expected:
-            raise appserver.AppServerError("reset snapshot belongs to a different account; pause was left unchanged")
-        state.save_quota(profile.name, quota.to_dict(q))
+        q = _snapshot(profile, snapshot)
         if outcome in ("reset", "alreadyRedeemed") and q.eligible:
             state.clear_quota_pause(profile.name)
         if idempotency_key is None:
@@ -105,11 +124,15 @@ def redeem(name: str | None = None, as_json: bool = False, idempotency_key: str 
 
 
 def try_auto(profile: profiles.Profile) -> bool:
-    """Only an exhausted 5h window with an earned credit qualifies for automatic use."""
+    """Use one credit only for confirmed weekly exhaustion, never a 5h-only limit."""
     q = quota.fetch(profile)
-    short = [w for w in q.windows if w.seconds == 18000]
-    if not q.ok or not short or short[0].remaining > 0 or not q.reset_credits \
-            or any(w.remaining <= 0 for w in q.windows if w.seconds != 18000):
+    if q.eligible:
+        expected = auth.claims(profile.home).get("account_id")
+        if q.account_id and expected and q.account_id != expected:
+            raise appserver.AppServerError("usage snapshot belongs to a different account; pause was left unchanged")
+        state.clear_quota_pause(profile.name)
         return False
-    result = consume(profile)
+    if not auto_eligible(q):
+        return False
+    result = consume(profile, automatic=True)
     return result["outcome"] in ("reset", "alreadyRedeemed") and quota.from_dict(result["quota"]).eligible

@@ -49,6 +49,11 @@ Saved 5-hour/weekly reset times trigger live checks at the next fresh request wh
 Explicit readiness restores configured account priority; unknown or limited results keep
 the pause. An active response retains its account.
 
+`mycodex rotation auto-redeem on` enables automatic resets only at **0% weekly quota
+with at least one credit**, following `rotation order`. Each needed reset spends one
+credit and saves the remaining count. Normal 5-hour limits never spend credits;
+automatic spending is off by default.
+
 ## Projects and conversations
 
 These commands require a running phone-capable app-server, except local thread listing.

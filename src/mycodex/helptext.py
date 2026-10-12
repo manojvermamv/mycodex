@@ -58,7 +58,7 @@ DETAILS = {
     "rotation order": ("Set the order of backup accounts. This does not guarantee which account starts every request.", "mycodex rotation order [NAME ...] [--clear]", [("NAME ...", "Preferred backup order; omit names to show it."), ("--clear", "Remove your preferred order; use available usage to rank backups.")]),
     "rotation reset": ("Clear account-switching pauses after a limit has reset. This does not add usage or spend a reset credit.", "mycodex rotation reset [NAME ...]", [("NAME ...", "Accounts to unpause; omit names to clear every current pause.")]),
     "rotation headroom": ("Switch fresh requests away from low 5-hour usage before they fail. Already-started sticky requests stay on their account.", "mycodex rotation headroom [PERCENT]", [("PERCENT", "0 to 100; default 5. Omit to show the setting. 0 turns this feature off.")]),
-    "rotation auto-redeem": ("Choose whether to spend earned resets automatically when 5-hour usage reaches zero. Off by default.", "mycodex rotation auto-redeem on|off", [("on|off", "on allows automatic spending; off keeps earned credits for manual use.")]),
+    "rotation auto-redeem": ("Automatically spend a reset only when weekly usage has 0% left and that account has at least one credit. Follows your account order and never spends for a 5-hour limit alone. Off by default.", "mycodex rotation auto-redeem on|off", [("on|off", "on enables weekly-only resets; off keeps credits for manual use. Set account priority with rotation order.")]),
     "rotation log": ("Read account-switching events.", "mycodex rotation log [OPTIONS]", [("-n, --lines N", "Show the last N lines; default 40. Use a positive whole number."), FOLLOW]),
     "threads list": ("List recent conversations across your accounts. Provider is the service used to create a conversation.", "mycodex threads [list] [OPTIONS]", [("--all", "Include archived conversations."), ("-n, --limit N", "Number of conversations to show; default 40. Use a positive whole number."), JSON]),
     "threads adopt": ("Copy a conversation created with another provider into an OpenAI conversation. The original stays unless you ask to archive it.", "mycodex threads adopt ID [OPTIONS]", [THREAD, ("--name NAME", "Choose a name for the copy."), ("--archive-original", "Archive the original after creating the copy; its history is kept.")]),
@@ -169,7 +169,7 @@ def markdown() -> str:
         lines += [row("-h, --help", "Show instructions without needing required values."), ""]
     lines += ["## Behavior to remember", "",
               "- `unknown` usage never counts as confirmed readiness. Online checks may renew logins.",
-              "- Reset spending is explicit unless you enable `rotation auto-redeem on`.",
+              "- `rotation auto-redeem on` spends only at 0% weekly quota with at least one credit, in account order; never for a 5-hour limit alone.",
               "- Preserve `state/accounts.json`; unreadable state is reported without replacing its retry keys.",
               "- Starting/stopping/restarting the phone service can interrupt active work.",
               "- Forced phone-account removal and immediate-exit failover remain open:",

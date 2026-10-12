@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Automatic reset-credit redemption now requires confirmed **0% weekly quota and
+  at least one available credit**. A normal exhausted 5-hour window never qualifies,
+  including after a backend rejection. The existing setting remains opt-in.
+- Fresh requests check weekly-paused accounts in configured priority order and stop
+  at a usable account. Each needed reset consumes one credit and saves the updated
+  balance; unavailable accounts fall back to the next candidate. A live check under
+  the redemption lock prevents spending after weekly quota or credit availability changes.
+- A successful weekly reset keeps its prompt on the recovered account even below
+  the five-hour headroom threshold. Updated command help and usage documentation.
+- The approved host deployment enables weekly-only automatic redemption after the
+  old proxy stops. The independent observer verifies reconnect and restores the previous
+  code and setting if recovery is needed. See the [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
+
 ## v0.4.1 — 2026-10-08
 
 - Clarified that relay cache sharing preserves user model defaults and saved thread

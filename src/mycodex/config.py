@@ -26,7 +26,7 @@ DEFAULTS: dict[str, Any] = {
         "order": [],              # preferred order when the proxy has to pick an account
         "disabled": [],           # profiles the proxy never switches to
         "min_quota_headroom": 5.0, # percent remaining on 5h window; 0 disables proactive routing
-        "auto_redeem": False,     # earned credits are preserved unless explicitly enabled
+        "auto_redeem": False,     # opt-in: spend only for exhausted weekly quota, in account order
     },
     "remote": {
         "mode": "rotating",       # rotating: model turns go through the rotation proxy; pinned: one account

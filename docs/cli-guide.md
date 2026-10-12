@@ -280,7 +280,7 @@ mycodex rotation headroom [PERCENT]
 
 ## rotation auto-redeem
 
-Choose whether to spend earned resets automatically when 5-hour usage reaches zero. Off by default.
+Automatically spend a reset only when weekly usage has 0% left and that account has at least one credit. Follows your account order and never spends for a 5-hour limit alone. Off by default.
 
 ```text
 mycodex rotation auto-redeem on|off
@@ -288,7 +288,7 @@ mycodex rotation auto-redeem on|off
 
 | Parameter | Meaning |
 |---|---|
-| `on&#124;off` | on allows automatic spending; off keeps earned credits for manual use. |
+| `on&#124;off` | on enables weekly-only resets; off keeps credits for manual use. Set account priority with rotation order. |
 | `-h, --help` | Show instructions without needing required values. |
 
 ## rotation log
@@ -639,7 +639,7 @@ mycodex [--profile NAME] remote-control [OPTIONS]
 ## Behavior to remember
 
 - `unknown` usage never counts as confirmed readiness. Online checks may renew logins.
-- Reset spending is explicit unless you enable `rotation auto-redeem on`.
+- `rotation auto-redeem on` spends only at 0% weekly quota with at least one credit, in account order; never for a 5-hour limit alone.
 - Preserve `state/accounts.json`; unreadable state is reported without replacing its retry keys.
 - Starting/stopping/restarting the phone service can interrupt active work.
 - Forced phone-account removal and immediate-exit failover remain open:

@@ -401,7 +401,7 @@ def rotation_status(as_json: bool) -> int:
     fields = [
         ("Account switching", "enabled" if rot["enabled"] else "disabled (launches run one account, no proxy)"),
         ("Switch below", f"{rot.get('min_quota_headroom', 0):g}% (fresh turns only; recent quota required)"),
-        ("Spend resets automatically", "on" if rot.get("auto_redeem") else "off (earned reset credits preserved)"),
+        ("Spend resets automatically", "on (0% weekly quota only, in account order)" if rot.get("auto_redeem") else "off (earned reset credits preserved)"),
         ("Order", " > ".join(rot["order"]) if rot["order"] else "not set (most quota left first)"),
         ("Disabled", ", ".join(rot["disabled"]) or "none"),
         ("Ready now", ", ".join(ready) or "none"),
@@ -430,7 +430,8 @@ def rotation_headroom(value: float | None) -> int:
 def rotation_auto_redeem(enable: bool) -> int:
     with config.editing() as data:
         data["rotation"]["auto_redeem"] = enable
-    ui.success(f"automatic earned-reset redemption {'enabled' if enable else 'disabled'}")
+    ui.success("automatic weekly resets enabled (0% weekly quota, at least one credit, in account order)"
+               if enable else "automatic reset spending disabled; credits kept for manual use")
     return 0
 
 

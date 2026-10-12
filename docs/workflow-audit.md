@@ -38,9 +38,14 @@ version remained `0.2.0` and the additions were unreleased. See the dated public
   tokens are not copied. An account lock serializes redemption, and unresolved attempts
   retain their idempotency key. No phone relay login is changed.
 - `rotation.auto_redeem` defaults to false. Enabling it explicitly allows spending an
-  earned reset on an exhausted 5-hour window, before reactive/proactive fallback. Another
-  exhausted window prevents automatic spending. Unknown backend usage permission does
-  not count as confirmed recovery.
+  earned reset only with 0% weekly quota and at least one available credit. Fresh prompts
+  follow configured account order, including weekly-paused profiles, and stop when an
+  account is usable. Credit balances are saved after each needed reset. An account lock
+  protects a final live eligibility check before spending. A 5-hour limit alone never
+  spends credits, including after a backend quota rejection. Unknown weekly quota or
+  credit counts prevent spending; unknown backend permission does not confirm recovery.
+  A successful weekly reset keeps that request on the recovered account even below
+  the five-hour headroom threshold.
 - The running supervisor/proxy retains its loaded code until a later restart. Existing
   explicit `remote.failover=false` is preserved by this update. A later new start
   uses the new failover default; restart preserves the saved choice. New terminal

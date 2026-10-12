@@ -161,7 +161,13 @@ profile still includes its owner. The global switch applies to later terminal la
 
 Reset redemption reuses a persistent idempotency key after an uncertain failure. Keep
 `state/accounts.json` intact for retries. Automatic spending requires explicitly enabling
-`rotation auto-redeem on`; no credit is spent merely by checking quota.
+`rotation auto-redeem on`. It spends one credit only when **weekly quota is 0% and
+that account has at least one credit**. Fresh prompts follow `rotation order`, including
+weekly-paused accounts, and stop at the first usable account. Updated credit counts are
+saved after redemption; an account without credits is skipped for automatic resets.
+A successful weekly reset keeps that prompt on the recovered account, including when
+its five-hour headroom is low. Normal 5-hour limits never trigger spending.
+No credit is spent merely by checking quota.
 
 ## 7. Connect your phone
 

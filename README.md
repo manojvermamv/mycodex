@@ -522,9 +522,15 @@ in [docs/projects-and-threads.md](docs/projects-and-threads.md).
 - **Earned resets**: `quota redeem PROFILE` uses an isolated account-specific official
   app-server, never switches the phone relay, and reuses a saved idempotency key after
   an uncertain failure. It re-reads limits before clearing a quota pause. Automatic
-  redemption is off by default; `rotation auto-redeem on` enables it for exhausted
-  5-hour windows with a credit, before fallback to another account. Credits are
-  preserved when another quota window is also exhausted.
+  redemption is off by default; `rotation auto-redeem on` enables it only when an
+  account has **0% weekly quota left and at least one reset credit**. Fresh requests
+  check accounts in `rotation order`, including accounts paused for weekly quota,
+  and stop once one can serve the request. Each needed reset spends one credit and
+  saves the updated balance; the next account is considered when the earlier one
+  cannot recover or has no credits. Eligibility is checked again under the redemption
+  lock before spending. A normal 5-hour limit alone never spends credits, even after
+  a backend rejection. A successful weekly reset keeps that prompt on the recovered
+  account, even below the five-hour headroom threshold. An active turn keeps its account affinity.
 - **Per request**: an active turn binding takes priority. Fresh unbound model requests
   follow `rotation order`; without an explicit order, the account with the most remaining
   quota goes first, with session/current account affinity used only to break ties.

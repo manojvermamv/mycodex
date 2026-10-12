@@ -146,19 +146,31 @@ turn-state header does not suppress this policy or reset-due live checks. Stale 
 snapshots older than 60 seconds are refreshed at this boundary, using a 3-second usage
 HTTP timeout. Token-lock/refresh waits and batched accounts can take longer. A snapshot
 must be no older than 300 seconds for proactive headroom decisions. Active bindings
-are not moved proactively. Optional `auto_redeem` spends an earned reset at an exhausted
-5-hour window before fallback; it defaults to false. Redemption uses a temporary stdio
-app-server with externally managed ChatGPT tokens and a persistent idempotency key,
-then reads backend limits. It never changes the relay account or copies refresh tokens.
+are not moved proactively. Optional `auto_redeem` defaults to false and requires a
+confirmed exhausted weekly window (604800 seconds) with at least one available credit.
+Fresh unbound requests check candidates in configured account order, including weekly
+quota pauses, and stop at the first usable account. A healthy higher-priority account
+preserves lower-priority credits. With no explicit order, normal quota ranking applies.
+When a weekly reset succeeds and confirms readiness, that prompt stays on the recovered
+account even if its five-hour headroom is below the proactive threshold.
+Redemption uses a temporary stdio app-server with externally managed ChatGPT tokens and
+a persistent idempotency key. Automatic attempts re-read account limits under the account
+lock before consuming one credit, then save the authoritative limits and credit balance.
+An ineligible recheck spends nothing. Unknown weekly quota or credit counts prevent
+spending; a 5-hour limit alone never qualifies, even in the reactive retry path.
+It never changes the relay account or copies refresh tokens.
 
 Excluded: accounts without a login, accounts in `rotation.disabled` (except the launch
-profile), and accounts paused in `state/accounts.json`. If everything is paused, the
+profile), and accounts paused in `state/accounts.json`. An automatic weekly reset can
+recover a quota-paused account before its saved deadline; authentication and other pauses
+are preserved. If everything is paused, the
 account whose pause ends first is asked anyway, except for reset-due accounts whose
 live recovery is still unconfirmed. If no candidate remains, the proxy returns a local
 no-account error.
 
-A quota pause is reconsidered only while planning a fresh model request and after its
-saved pause deadline or an exhausted window's saved reset time is due. The proxy reuses
+A quota pause is normally reconsidered while planning a fresh model request after its
+saved pause deadline or an exhausted window's saved reset time is due. Opt-in automatic
+redemption also checks qualifying weekly-paused accounts before the deadline. The proxy reuses
 the persisted 5-hour/weekly reset timestamps and pause deadline; status displays the saved time.
 It checks current usage before ranking the account again. Only an explicit ready result
 clears the quota pause and restores the account's configured priority. Unknown or still
@@ -239,7 +251,7 @@ The settings schema version is 2. Its defaults include:
 | `rotation.enabled` | `true` | proxy use for later terminal launches |
 | `rotation.order`, `rotation.disabled` | `[]` | fallback preference/exclusion; proxy owner remains a candidate |
 | `rotation.min_quota_headroom` | `5.0` | fresh model-request 5h threshold; 0 disables proactive routing |
-| `rotation.auto_redeem` | `false` | explicit opt-in to earned-reset spending |
+| `rotation.auto_redeem` | `false` | opt-in: weekly quota 0%, at least one credit, in account order |
 | `remote.mode` | `rotating` | separate service mode; global terminal rotation switch does not pin it |
 | `remote.models_source` | `null` | saved Plus model-cache source; optional refresh before managed server startup |
 | `remote.failover` | `true` | new-start default; restart preserves the stored value |
