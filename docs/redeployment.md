@@ -230,6 +230,10 @@ connection checks, requires six seconds of stable health, and monitors for two m
 The existing admission/drain race and network-related reconnect limitations still apply.
 
 <!-- mycodex-weekly-reset-deployment:start -->
-Deployment is prepared; the guarded observer has not yet recorded a successful restart.
-The durable host record is `state/deployments/20261012T081612Z/status.json`.
+The weekly-only policy was deployed and enabled at **2026-10-12 08:42:13 UTC**.
+The observer completed its two-minute health monitor with 0 rollback attempts.
+Fresh checks confirmed the new working-tree supervisor, connected relay/control socket
+and proxy, enabled weekly-only redemption, original phone identity/pairing and three
+conversation/project records, and both independent Codex processes. The saved account
+priority and user model choices were preserved. No credit was redeemed for verification.
 <!-- mycodex-weekly-reset-deployment:end -->
