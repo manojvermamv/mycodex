@@ -19,8 +19,8 @@ The Codex you get is the unmodified original. mycodex is a small, dependency-fre
 tool around it: it prepares each account's Codex home, runs a local rotation proxy in
 front of the ChatGPT backend, and manages the remote-control service.
 
-The current version is **v0.4.2** (2026-10-12). See the [changelog](CHANGELOG.md),
-[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.2), and
+The current version is **v0.4.3** (2026-11-17). See the [changelog](CHANGELOG.md),
+[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.3), and
 [everyday commands](docs/cheatsheet.md). The complete source, tests, and public docs
 are versioned together.
 The [restart and recovery plan](docs/redeployment.md) explains a guarded deployment
@@ -704,10 +704,12 @@ The weekly-only reset policy in **v0.4.2** was deployed and enabled at
 **2026-10-12 08:42:13 UTC**. The independent observer completed its two-minute monitor
 with no rollback. Fresh checks confirm the connected relay/proxy, original phone
 identity/pairing and project threads, and preserved independent Codex processes.
-The release has 29 modules and 166 isolated tests. Version/docs publication leaves
-the running service online with its already loaded weekly-only behavior; its loaded
-version metadata changes on a later planned restart. See the
-[deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
+
+The model catalogue routing decoupling, live backend fetching, plan-tier ranking, and
+**GPT-6.2 model family** support in **v0.4.3** was deployed at **2026-11-17 19:31:05 UTC**.
+Fresh checks confirm connected relay/proxy, retained pairing and active threads,
+and preserved independent Codex processes. The release has 29 modules and 167 isolated
+tests. See the [deployment record](docs/redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).
 
 R01/R06 and the other open review items are explicitly retained in the
 [project review](docs/project-review.md). Personal host notes, runtime state, credentials,

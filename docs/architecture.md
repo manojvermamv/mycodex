@@ -4,7 +4,7 @@ This document explains how mycodex works internally and why each mechanism exist
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
 The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.2** on 2026-10-12 (29 package modules, 166 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+**v0.4.3** on 2026-11-17 (29 package modules, 167 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -517,6 +517,9 @@ remain unchanged. Private observer/recovery artifacts are excluded from Git.
 The v0.4.2 weekly-only reset policy was deployed and enabled on 2026-10-12 at
 08:42:13 UTC. Its observer completed two-minute monitoring without rollback; fresh
 checks retain pairing, projects, proxy health, and independent Codex processes.
-The full suite now has 166 isolated tests. Release publication changes only version
-metadata and docs after this deployment; the running service keeps its loaded metadata.
-See the [current deployment record](redeployment.md#weekly-only-reset-deployment--2026-10-12).
+
+The v0.4.3 release deploys decoupled model catalogue routing, live backend model fetching,
+plan-tier account ranking, HTTP 400 `model_not_found` error failover, and support for the
+newly launched **GPT-6.2 model family** (`gpt-6.2-sol`, `gpt-6.2-astra`).
+The full suite now has 167 isolated tests.
+See the [current deployment record](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).

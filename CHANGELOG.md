@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.4.3 — 2026-11-17
+
+- **Decoupled Model Catalogue Proxy Routing**: Model list requests (`GET /backend-api/codex/models`)
+  are decoupled from turn/prompt quota pauses. The proxy continuously routes model queries
+  through the configured Plus source (`models_source` or highest-tier member), ensuring
+  connected mobile and terminal sessions retain access to the full model catalogue (including
+  Astra and Sol) even when accounts temporarily reach their 5-hour rolling turn limits.
+- **Live Backend Catalogue Sync (`model_cache.py`)**: Added `fetch_and_write` to retrieve
+  the model list directly from the OpenAI backend using the Plus account's credentials on demand
+  and during `mycodex remote models share`, eliminating errors when a source profile lacks a
+  pre-existing local cache.
+- **Plan-Tier Ranking & Model Error Failover (`proxy.py`)**: Profile ranking now prioritizes
+  Plus accounts over Free accounts for turn execution. Added `MODEL_CODES` (`model_not_found`,
+  `unsupported_model`, etc.) to HTTP 400 error classification so that backend model-unsupported
+  rejections automatically rotate to an eligible account rather than failing the turn.
+- **GPT-6.2 Model Family Integration**: Verified and integrated OpenAI's newly launched **GPT-6.2
+  model family** (`gpt-6.2-sol`, `gpt-6.2-astra`), verified priority 1 and 2 in the live catalogue,
+  and confirmed active serving to ChatGPT mobile clients and local CLI commands.
+- **Test Suite Race Condition Hardening**: Resolved a multi-threaded timing race in
+  `test_completed_response_releases_turn_affinity_but_keeps_token_origin` using bounded
+  completion polling. **167 isolated application tests** pass.
+- Successfully verified on host with connected remote relay, zero-downtime service restart,
+  and active pairing preserved.
+
 ## v0.4.2 — 2026-10-12
 
 - Automatic reset-credit redemption now requires confirmed **0% weekly quota and

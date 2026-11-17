@@ -539,7 +539,7 @@ class ProxyRotationTest(unittest.TestCase):
     def test_completed_response_releases_turn_affinity_but_keeps_token_origin(self):
         self.post()
 
-        self.assertNotIn("turn-acct-a", self.proxy.turns)
+        self.await_completed_response("turn-acct-a")
         self.assertEqual(self.proxy.issued["turn-acct-a"], "a")
 
     def completed_backup_token(self):

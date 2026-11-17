@@ -78,6 +78,10 @@ QUOTA_CODES = frozenset({
     "resource_exhausted", "usage_limit_reached", "usage_not_included", "workspace_member_credits_depleted",
 })
 RATE_CODES = frozenset({"rate_limit_exceeded", "rate_limit_exceeded_error", "slow_down"})
+MODEL_CODES = frozenset({
+    "model_not_found", "model_cap_exceeded", "unsupported_model",
+    "model_access_denied", "model_not_available",
+})
 PROFILE_CODES = frozenset({"deactivated_workspace"})
 OVERLOAD_CODES = frozenset({"server_is_overloaded", "overloaded_error"})
 USAGE_PHRASES = ("you've hit your usage limit", "you have hit your usage limit", "you hit your usage limit",
@@ -135,18 +139,23 @@ def classify(status: int | None, body: bytes) -> Verdict:
     workspace = "workspace is out of credits" in text or "workspace_member_credits_depleted" in text \
         or ("out of credits" in text and "workspace owner" in text and "refill" in text)
     quota_hit = bool(codes & QUOTA_CODES) or usage or workspace
+    model_unsupported = bool(codes & MODEL_CODES) or ("model" in text and ("not supported" in text or "not available" in text or "not found" in text))
     rate = bool(codes & RATE_CODES)
     gone = bool(codes & PROFILE_CODES) or "deactivated_workspace" in text
     overload = bool(codes & OVERLOAD_CODES) or any(p in text for p in OVERLOAD_PHRASES)
     if status is None:
-        for kind, hit in (("profile", gone), ("overload", overload), ("quota", quota_hit), ("rate", rate)):
+        for kind, hit in (("profile", gone), ("overload", overload), ("quota", quota_hit or model_unsupported), ("rate", rate)):
             if hit:
                 return Verdict(kind, message, resets_at)
         return Verdict("other", message, resets_at)
-    if status in (402, 403):
+    if status in (400, 402, 403, 404):
         if gone:
             return Verdict("profile", message)
-        return Verdict("quota", message, resets_at) if quota_hit else Verdict("other", message)
+        if model_unsupported:
+            return Verdict("quota", message, resets_at)
+        if status in (402, 403) and quota_hit:
+            return Verdict("quota", message, resets_at)
+        return Verdict("other", message)
     if status == 429:
         if rate:
             return Verdict("rate", message, resets_at)
@@ -441,6 +450,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (state.StateError, SystemExit) as exc:
             self._local(503, {"error": {"type": "mycodex_settings", "message": str(exc)}})
             return
+        is_models_path = self.path.split("?")[0].endswith("/models")
+        if is_models_path:
+            members, cfg = proxy.pool()
+            models_source_name = cfg.get("remote", {}).get("models_source")
+            best_profile = None
+            if models_source_name:
+                best_profile = next((p for p in members if p.name == models_source_name), None)
+            if not best_profile:
+                for p in members:
+                    id_plan = profiles.identity(p.home).get("plan")
+                    q = quota.cached(p.name)
+                    q_plan = q.plan if q else None
+                    if (id_plan or q_plan) in ("plus", "pro", "team", "enterprise"):
+                        best_profile = p
+                        break
+            if best_profile:
+                plan = [best_profile] + [p for p in plan if p != best_profile]
         if not plan:
             self._local(503, {"error": {"type": "mycodex_no_account",
                                         "message": "mycodex: no logged-in profile is available "
@@ -799,15 +825,18 @@ class RotationProxy:
             session_owner = self._lookup(self.sessions, session)
             current = self.current
 
-        def rank(p: Profile) -> tuple[int, float, int, str]:
+        def rank(p: Profile) -> tuple[int, int, float, int, str]:
             cached = quota.cached(p.name, max_age=1800)
             if cached and cached.status == "limited":
                 headroom = -1.0
             else:
                 headroom = cached.remaining if cached and cached.remaining is not None else 50.0
             order_rank = order.index(p.name) if p.name in order else len(order)
+            id_plan = profiles.identity(p.home).get("plan")
+            q_plan = cached.plan if cached else None
+            plan_tier = 0 if (id_plan or q_plan) in ("plus", "pro", "team", "enterprise") else 1
             affinity_rank = 0 if p.name in (session_owner, current) else 1
-            return (order_rank, -headroom, affinity_rank, p.name)
+            return (order_rank, plan_tier, -headroom, affinity_rank, p.name)
 
         redeemed = None
         if automatic and fresh_turn and not turn_owner:

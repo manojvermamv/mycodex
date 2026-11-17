@@ -54,17 +54,67 @@ def _destination(profile: Profile) -> tuple[Path, Path]:
     return home, target
 
 
-def sync(source: Profile, target: Profile) -> bool:
+def fetch_and_write(profile: Profile, timeout: int = 10) -> bytes:
+    """Fetch the latest model catalogue from backend and save it to profile home."""
+    import urllib.request
+    from . import auth
+    creds = auth.credentials(profile.home)
+    url = "https://chatgpt.com/backend-api/codex/models?client_version=0.169.0"
+    headers = {
+        "Authorization": f"Bearer {creds.access_token}",
+        "User-Agent": "codex/0.169.0 (Linux; x86_64)",
+        "Accept": "application/json",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read()
+        json.loads(data.decode("utf-8"), parse_constant=_invalid_constant)
+
+    logical_home = profile.home
+    home = logical_home.resolve(strict=True)
+    target = home / CACHE_FILE
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{CACHE_FILE}.", dir=home)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+    return data
+
+
+def sync(source: Profile, target: Profile, refresh: bool = False) -> bool:
     """Atomically copy SOURCE's valid cache into TARGET; return false for a no-op."""
-    if source.name == target.name:
+    if source.name == target.name and not refresh:
         return False
     try:
-        if source.home.resolve(strict=True) == target.home.resolve(strict=True):
+        if source.home.resolve(strict=True) == target.home.resolve(strict=True) and not refresh:
             return False
     except OSError:
         pass
 
-    snapshot = _snapshot(source.home / CACHE_FILE)
+    source_cache = source.home / CACHE_FILE
+    snapshot = None
+    if refresh or not source_cache.exists():
+        try:
+            snapshot = fetch_and_write(source)
+        except Exception:
+            if source_cache.exists():
+                snapshot = _snapshot(source_cache)
+            else:
+                raise ModelCacheError("the selected profile has no readable valid model cache")
+    else:
+        snapshot = _snapshot(source_cache)
+
     directory, destination = _destination(target)
     temporary: Path | None = None
     try:

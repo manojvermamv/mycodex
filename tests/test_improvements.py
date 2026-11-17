@@ -1116,3 +1116,11 @@ class ModelCacheShareTest(unittest.TestCase):
         lifecycle.assert_not_called()
         self.assertEqual(target_cache.read_text(), '{"models":["old"]}')
         self.assertIn('model cache sync failed; continuing', err.getvalue())
+
+    def test_classify_rotates_on_model_not_found(self):
+        from mycodex import proxy
+        body = b'{"error":{"type":"invalid_request_error","code":"model_not_found","message":"The \'gpt-6.2-astra\' model is not supported."}}'
+        verdict = proxy.classify(400, body)
+        self.assertTrue(verdict.rotates)
+        self.assertEqual(verdict.kind, "quota")
+        self.assertIn("gpt-6.2-astra", verdict.message)

@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.4.2**, dated 2026-10-12.
+This guide targets **v0.4.3**, dated 2026-11-17.
 The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
 for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
 
@@ -316,13 +316,13 @@ rm -rf ~/mycodex
 - [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
 - [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
 
-## v0.4.2 validation and deployment — 2026-10-12
+## v0.4.3 validation and deployment — 2026-11-17
 
 For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
-166 isolated tests. The package has 29 modules. The weekly-only reset policy was
-deployed and enabled at **2026-10-12 08:42:13 UTC**, with no rollback and a completed
-two-minute monitor. Fresh checks preserve the phone identity/pairing, projects, and
-independent Codex processes. The [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12)
+167 isolated tests. The package has 29 modules. The model catalogue decoupling and
+GPT-6.2 model family support were deployed at **2026-11-17 19:31:05 UTC**, with no
+rollback. Fresh checks preserve the phone identity/pairing, projects, and
+independent Codex processes. The [deployment record](docs/redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17)
 records the observer and recovery checks. The following v0.4.1 record is historical.
 
 <!-- mycodex-deployment-status:start -->

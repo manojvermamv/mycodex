@@ -228,3 +228,13 @@ real credits were not consumed for verification. The approved host deployment co
 at 08:42:13 UTC with no rollback, retained pairing/projects and independent processes,
 and enabled the policy. See [redeployment.md](redeployment.md#weekly-only-reset-deployment--2026-10-12).
 The other findings still marked open remain unresolved.
+
+## v0.4.3 model catalogue decoupling & GPT-6.2 follow-up — 2026-11-17
+
+Resolved model catalogue disappearance caused by routing decoupling gap: when Plus profiles
+hit 5-hour prompt quota, `GET /backend-api/codex/models` queries now continue to use the
+designated Plus authority instead of falling back to the Free relay account. Added on-demand
+backend catalogue retrieval (`fetch_and_write`), plan-tier priority ranking, and automatic
+failover on HTTP 400 `model_not_found`. Validated live GPT-6.2 model family support (`gpt-6.2-sol`,
+`gpt-6.2-astra`). Hardened test suite against multi-threaded completion race. 167 isolated
+tests pass. Deployed and verified on host. See [redeployment.md](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).

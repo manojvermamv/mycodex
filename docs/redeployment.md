@@ -243,3 +243,17 @@ the verified host record. The CLI reports 0.4.2 after publication; the running r
 retains its loaded version metadata until a later planned restart. Publishing this
 version does not repeat the restart or spend a reset credit. Both temporary host
 services and the policy activation hook were removed after completion.
+
+### Model Catalogue Decoupling and GPT-6.2 Deployment — 2026-11-17
+
+<!-- mycodex-model-decoupling-deployment:start -->
+The model catalogue decoupling and GPT-6.2 support were deployed at **2026-11-17 19:31:05 UTC**.
+Fresh checks confirmed the running working-tree supervisor, connected relay/control socket and
+proxy (127.0.0.1:34355), preserved phone identity/pairing (Android 16), and active project
+conversations. Live proxy logs verified upstream catalogue queries to `https://chatgpt.com/backend-api/codex/models`
+routing through the configured Plus account (`anshulsharma96544_gmail.com`), returning the newly released
+GPT-6.2 model family (`gpt-6.2-sol`, `gpt-6.2-astra`).
+<!-- mycodex-model-decoupling-deployment:end -->
+
+The v0.4.3 release publishes this deployed configuration, its expanded 167-test suite, and
+the verified host record. The CLI reports 0.4.3. All 167 isolated application tests pass.

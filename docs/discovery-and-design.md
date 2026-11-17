@@ -257,3 +257,16 @@ The 166-test suite is isolated from real accounts and services. The guarded host
 completed at 08:42:13 UTC without rollback and preserved pairing, projects, and independent
 Codex processes; see [the deployment record](redeployment.md#weekly-only-reset-deployment--2026-10-12).
 Publication updates version/docs while the relay remains online with this deployed behavior.
+
+## v0.4.3 model catalogue decoupling & GPT-6.2 support — 2026-11-17
+
+Model list queries (`GET /backend-api/codex/models`) were decoupled from prompt turn quota
+status. When Plus accounts hit their 5-hour prompt usage limit, the local proxy retains the
+Plus profile as the upstream model catalogue authority. This prevents the previous issue where
+exhausted 5-hour prompt quota caused Codex to query OpenAI via the Free relay account and
+downgraded the mobile phone app's model picker. In addition, `model_cache.py` now fetches
+model metadata directly from OpenAI on demand via `fetch_and_write` when missing. Profile
+ranking prioritizes Plus accounts over Free accounts, and backend HTTP 400 `model_not_found`
+errors are classified as rotatable so unsupported model turns fail over to an eligible account.
+The **GPT-6.2 model family** (`gpt-6.2-sol`, `gpt-6.2-astra`) was verified live on the backend
+and made available to clients. Isolated tests expanded to 167. See [redeployment.md](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).

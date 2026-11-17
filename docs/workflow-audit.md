@@ -177,3 +177,24 @@ retained identity/pairing and project threads, and preserved independent process
 Thirty private observer checks verify lifecycle and policy transitions; the frozen
 recovery version passed 145 tests. Verification spent no real credits. See
 [redeployment.md](redeployment.md#weekly-only-reset-deployment--2026-10-12).
+
+## v0.4.3 model catalogue decoupling & GPT-6.2 verification — 2026-11-17
+
+- **Model Catalogue Decoupling**: Audited and fixed an issue where 5-hour prompt usage limits
+  on Plus accounts caused the proxy to exclude them from `GET /backend-api/codex/models` requests.
+  The proxy fell back to the Free relay account, causing OpenAI to return only Free-tier models
+  and overwriting `models_cache.json`. Decoupled catalogue routing from turn quota blocks so
+  the Plus catalogue authority remains active even during rolling 5-hour prompt cooldowns.
+- **On-Demand Backend Fetching (`model_cache.py`)**: Added `fetch_and_write` to fetch
+  and parse model metadata directly from OpenAI using profile credentials, avoiding failures
+  when source accounts have not previously run an app-server. Added `refresh=True` parameter to
+  `sync` so `mycodex remote models share` pulls the latest backend models.
+- **Model-Mismatch Error Failover (`proxy.py`)**: Added `MODEL_CODES` (`model_not_found`,
+  `unsupported_model`, `model_access_denied`) to HTTP 400 error classification so that backend
+  rejections when a profile lacks access to a requested model (e.g. Astra on a Free tier)
+  rotate to an eligible Plus account instead of failing the turn.
+- **GPT-6.2 Model Family Integration**: Verified live backend availability of `gpt-6.2-sol` and
+  `gpt-6.2-astra` (priority 1 and 2), synchronized them to the relay profile, and confirmed
+  visibility in the ChatGPT mobile app and terminal picker.
+- **Regression Suite**: 167 isolated application tests pass. Live host deployment verified with
+  retained pairing, active threads, and running remote service. See [redeployment.md](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).

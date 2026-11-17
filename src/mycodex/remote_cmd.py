@@ -149,7 +149,7 @@ def share_models(source_name: str | None) -> int:
         ui.error("the selected phone or source account no longer exists")
         return 1
     try:
-        copied = model_cache.sync(source, target)
+        copied = model_cache.sync(source, target, refresh=True)
     except model_cache.ModelCacheError as exc:
         ui.error(str(exc))
         return 1
