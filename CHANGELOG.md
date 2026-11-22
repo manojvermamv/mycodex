@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.4 — 2026-11-22
+
+- **Mobile Relay Thread Visibility (`threadSource: "user"`)**: Fixed seeded project conversations
+  being invisible in the ChatGPT mobile app (`codex_chatgpt_android_remote`). The app derives
+  project groupings client-side from `thread/list` filtered by `thread_source == "user"`. Seeding
+  now explicitly passes `"threadSource": "user"` to the official daemon's `thread/start` RPC so
+  new project conversations appear immediately under "Projects" and "Recent Projects" on the phone.
+- **Built-in `feed` Command Alias**: Added `mycodex feed` and `mycodex remote feed` as top-level
+  and remote command aliases for `mycodex remote seed`, providing direct message dispatch into
+  project conversations while strictly respecting YAGNI principles.
+- **Mobile Relay Forensic Diagnostic Record (`docs/mobile-relay-visibility-audit.md`)**: Included
+  the comprehensive forensic audit detailing the mobile client's discovery protocol, timeline
+  analysis, Bubblewrap loopback constraints on Linux/EC2 unprivileged namespaces, and verification.
+- **Unit Test Coverage**: Added tests in `test_improvements.py` asserting `threadSource: "user"`
+  propagation on thread start and `feed` CLI routing. The test suite now passes **169 isolated
+  application tests**.
+
 ## v0.4.3 — 2026-11-17
 
 - **Decoupled Model Catalogue Proxy Routing**: Model list requests (`GET /backend-api/codex/models`)

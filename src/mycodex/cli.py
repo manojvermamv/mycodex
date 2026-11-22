@@ -16,7 +16,7 @@ from . import __version__, accounts, codex, config, helptext, profiles, resolve,
 
 OWN_COMMANDS = {"profile", "profiles", "quota", "rotation", "remote", "remote-control", "status",
                 "processes", "ps", "doctor", "threads", "migrate", "help", "version", "login", "logout",
-                "__remote-serve", "projects", "use"}
+                "__remote-serve", "projects", "use", "feed", "seed"}
 
 
 @dataclass
@@ -267,6 +267,7 @@ def cmd_remote_control(args: list[str], g: Globals) -> int:
 def cmd_remote(args: list[str], g: Globals) -> int:
     from . import remote_cmd
     sub = args[0] if args and not args[0].startswith("-") else "status"
+    sub = "seed" if sub == "feed" else sub
     rest = args[1:] if args and not args[0].startswith("-") else args
     if sub in ("help", "-h", "--help"):
         sub_help("remote")
@@ -510,6 +511,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_rotation(args, g)
     if command == "remote-control":
         return cmd_remote_control(args, g)
+    if command in ("seed", "feed"):
+        return cmd_remote(["seed", *args], g)
     if command == "remote":
         return cmd_remote(args, g)
     return cmd_simple(command, args)

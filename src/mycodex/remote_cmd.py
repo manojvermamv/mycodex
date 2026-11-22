@@ -341,7 +341,7 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
         from . import projects
         project, created = projects.ensure(server, root_path, project_name)
         thread = server.result("thread/start", {"cwd": root, "projectId": project["id"],
-                                                "serviceName": "mycodex"})["thread"]
+                                                "serviceName": "mycodex", "threadSource": "user"})["thread"]
         title = name or root_path.name
         server.result("thread/name/set", {"threadId": thread["id"], "name": title})
         text = message or projects.READY_MESSAGE

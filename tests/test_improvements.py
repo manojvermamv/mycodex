@@ -1124,3 +1124,34 @@ class ModelCacheShareTest(unittest.TestCase):
         self.assertTrue(verdict.rotates)
         self.assertEqual(verdict.kind, "quota")
         self.assertIn("gpt-6.2-astra", verdict.message)
+
+    def test_seed_passes_thread_source_user(self):
+        calls = []
+        class FakeServer:
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def result(self, method, params):
+                calls.append((method, params))
+                if method == 'project/list':
+                    return {'data': [{'id': 'p1', 'name': 'test', 'roots': [{'path': '/test'}]}]}
+                if method == 'thread/start':
+                    return {'thread': {'id': 't1', 'modelProvider': 'openai'}}
+                if method == 'thread/name/set':
+                    return {}
+                if method == 'turn/start':
+                    return {'turn': {'id': 'turn1'}}
+                return {}
+        with mock.patch('mycodex.remote_cmd.server_socket', return_value=('/sock', 'profile')), \
+             mock.patch('mycodex.appserver.AppServer', return_value=FakeServer()), \
+             mock.patch('pathlib.Path.is_dir', return_value=True), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(remote_cmd.seed('/test', None, None, wait=False), 0)
+        start_call = [p for m, p in calls if m == 'thread/start'][0]
+        self.assertEqual(start_call.get('threadSource'), 'user')
+
+    def test_feed_alias_routes_to_seed(self):
+        with mock.patch('mycodex.cli.cmd_remote') as cmd_remote:
+            cmd_remote.return_value = 0
+            self.assertEqual(cli.main(['feed', '/test', '--no-wait']), 0)
+            cmd_remote.assert_called_once()
+            self.assertEqual(cmd_remote.call_args[0][0], ['seed', '/test', '--no-wait'])

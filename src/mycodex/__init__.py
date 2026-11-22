@@ -1,6 +1,6 @@
 """mycodex: multi-account orchestration around the official Codex CLI."""
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 __author__ = "Manoj Verma"
 __github__ = "manojvermamv"
 __url__ = "https://github.com/manojvermamv/mycodex"
