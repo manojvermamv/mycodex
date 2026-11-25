@@ -322,6 +322,77 @@ def logs(follow: bool, lines: int) -> int:
     return subprocess.call(args, env=paths.tool_env())
 
 
+def _wait_for_turn(server: appserver.AppServer, title: str, thread_id: str, turn_id: str, label: str) -> str:
+    status = "running on the server"
+    box = ui.StatusBox(title)
+    box.update("turn", f"waiting for {label} on {thread_id} (Ctrl-C stops waiting, not the turn)")
+    try:
+        done = server.wait_for("turn/completed", timeout=180,
+                               predicate=lambda note: note.get("params", {}).get("threadId") == thread_id
+                               and note.get("params", {}).get("turn", {}).get("id") == turn_id)
+    except KeyboardInterrupt:
+        done = None
+    box.clear()
+    turn = (done or {}).get("params", {}).get("turn", {})
+    return turn.get("status") or status
+
+
+def dispatch_turn(server: appserver.AppServer, thread_id: str, text: str) -> str:
+    """Resume `thread_id` onto the running server and start a new text turn."""
+    server.result("thread/resume", {"threadId": thread_id, "excludeTurns": True})
+    started = server.result("turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": text}]})
+    return started["turn"]["id"]
+
+
+def feed_thread(thread_id: str, message: str | None, wait: bool = True) -> int:
+    """Send a new user turn to an existing OpenAI-tagged conversation through the running server."""
+    from . import threads
+
+    text = (message or "").strip()
+    if not text:
+        ui.error("message text is required when feeding an existing thread",
+                 [f'mycodex feed {thread_id} --message "Try again" --no-wait'])
+        return 2
+    thread = threads._find(thread_id)
+    if thread.get("archived"):
+        ui.error("the thread is archived; unarchive it in Codex before feeding it")
+        return 1
+    if (thread.get("model_provider") or threads.OPENAI) != threads.OPENAI:
+        ui.error("this thread uses another provider; adopt it first (`mycodex threads adopt`)")
+        return 1
+    sock, profile = server_socket()
+    with appserver.AppServer(sock, timeout=60) as server:
+        turn_id = dispatch_turn(server, thread["id"], text)
+        status = _wait_for_turn(server, "Mycodex Feed", thread["id"], turn_id, f"turn {turn_id}") if wait else "running on the server"
+    ui.panel("Mycodex Feed", [
+        ("Thread", thread["id"]),
+        ("Turn", turn_id),
+        ("Status", status),
+        ("Phone account", profile or "-"),
+        ("Continue", f"on the phone or `mycodex resume {thread['id']}`"),
+    ])
+    return 1 if status in ("failed", "interrupted") else 0
+
+
+def _looks_like_thread_target(value: str | None) -> bool:
+    if not value:
+        return False
+    candidate = value.strip()
+    if Path(candidate).expanduser().exists():
+        return False
+    hex_chars = candidate.replace("-", "")
+    return len(candidate) >= 8 and all(c in "0123456789abcdefABCDEF" for c in hex_chars)
+
+
+def feed_or_seed(target: str | None, name: str | None, message: str | None, project_name: str | None = None,
+                 wait: bool = True) -> int:
+    """Feed an existing thread when `target` is a thread ID/prefix, otherwise seed a project."""
+    if _looks_like_thread_target(target):
+        assert target is not None
+        return feed_thread(target, message, wait=wait)
+    return seed(target, name, message, project_name, wait=wait)
+
+
 def seed(directory: str | None, name: str | None, message: str | None, project_name: str | None = None,
          wait: bool = True) -> int:
     """Start a new thread inside a project, through the running server's app-server API.
@@ -347,19 +418,7 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
         text = message or projects.READY_MESSAGE
         started = server.result("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": text}]})
         turn_id = started["turn"]["id"]
-        status = "running on the server"
-        if wait:
-            box = ui.StatusBox("Mycodex Seed")
-            box.update("turn", f"waiting for the first turn on {thread['id']} (Ctrl-C stops waiting, not the turn)")
-            try:
-                done = server.wait_for("turn/completed", timeout=180,
-                                       predicate=lambda note: note.get("params", {}).get("threadId") == thread["id"]
-                                       and note.get("params", {}).get("turn", {}).get("id") == turn_id)
-            except KeyboardInterrupt:
-                done = None
-            box.clear()
-            turn = (done or {}).get("params", {}).get("turn", {})
-            status = turn.get("status") or status
+        status = _wait_for_turn(server, "Mycodex Seed", thread["id"], turn_id, f"the first turn on {thread['id']}") if wait else "running on the server"
     ui.panel("Mycodex Seed", [
         ("Project", f"{project['name']} ({project['id']})" + (", created" if created else "")),
         ("Thread", thread["id"]),

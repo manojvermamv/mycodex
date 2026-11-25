@@ -16,7 +16,7 @@ from . import __version__, accounts, codex, config, helptext, profiles, resolve,
 
 OWN_COMMANDS = {"profile", "profiles", "quota", "rotation", "remote", "remote-control", "status",
                 "processes", "ps", "doctor", "threads", "migrate", "help", "version", "login", "logout",
-                "__remote-serve", "projects", "use", "feed", "seed"}
+                "__remote-serve", "projects", "use", "feed", "seed", "auto-resume"}
 
 
 @dataclass
@@ -236,6 +236,32 @@ def cmd_rotation(args: list[str], g: Globals) -> int:
     return 2
 
 
+def cmd_auto_resume(args: list[str]) -> int:
+    from . import auto_resume
+    sub = args[0] if args and not args[0].startswith("-") else "status"
+    rest = args[1:] if args and not args[0].startswith("-") else args
+    if sub in ("help", "-h", "--help"):
+        sub_help("auto-resume")
+        return 0
+    p = Parser(f"auto-resume {sub}")
+    if sub in ("status", "check"):
+        p.add_argument("--all", action="store_true")
+        p.add_argument("--json", action="store_true")
+        ns = p.parse(rest)
+        return auto_resume.status_cmd(ns.json, ns.all)
+    if sub in ("enable", "disable"):
+        p.add_argument("threads", nargs="*")
+        ns = p.parse(rest)
+        return auto_resume.set_enabled(sub == "enable", ns.threads)
+    if sub == "run":
+        p.add_argument("--all", action="store_true")
+        p.add_argument("--json", action="store_true")
+        ns = p.parse(rest)
+        return auto_resume.run_cmd(ns.json, ns.all)
+    ui.error(f"unknown auto-resume command '{sub}'", ["mycodex help auto-resume"])
+    return 2
+
+
 def _remote_start_parser(command: str) -> Parser:
     p = Parser(command)
     p.add_argument("--profile")
@@ -306,12 +332,13 @@ def cmd_remote(args: list[str], g: Globals) -> int:
         return remote_cmd.logs(ns.follow, ns.lines)
     if sub == "seed":
         p.add_argument("dir", nargs="?")
+        p.add_argument("text_arg", nargs="?")
         p.add_argument("--name")
         p.add_argument("--message")
         p.add_argument("--project")
         p.add_argument("--no-wait", action="store_true")
         ns = p.parse(rest)
-        return remote_cmd.seed(ns.dir, ns.name, ns.message, ns.project, not ns.no_wait)
+        return remote_cmd.feed_or_seed(ns.dir, ns.name, ns.message or ns.text_arg, ns.project, not ns.no_wait)
     if sub == "socket":
         p.parse(rest)
         return remote_cmd.socket_path()
@@ -509,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_quota(args, g)
     if command == "rotation":
         return cmd_rotation(args, g)
+    if command == "auto-resume":
+        return cmd_auto_resume(args)
     if command == "remote-control":
         return cmd_remote_control(args, g)
     if command in ("seed", "feed"):

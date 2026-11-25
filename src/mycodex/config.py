@@ -36,6 +36,14 @@ DEFAULTS: dict[str, Any] = {
         "failover": True,         # auth invalidation in either mode; quota exhaustion only in pinned mode
         "failover_check_seconds": 300,
     },
+    "auto_resume": {
+        "enabled": False,         # global opt-in: disabled by default; never retries without user consent
+        "threads": [],            # per-thread UUIDs opted into auto-resume while globally disabled
+        "buffer_seconds": 60,     # wait past 5h reset_at before attempting wake-up check
+        "backoff_seconds": 30,    # retry delay if quota API still lags at reset_at
+        "max_retries_per_turn": 1,
+        "message": "Try again",
+    },
     "aliases": {},
 }
 
@@ -79,6 +87,13 @@ def load(path: Path = paths.CONFIG_FILE) -> dict[str, Any]:
             check.text_value(remote.get(key), "remote." + key, optional=True)
         check.boolean(remote.get("failover"), "remote.failover")
         check.number(remote.get("failover_check_seconds"), "remote.failover_check_seconds", minimum=1, integer=True)
+        auto_resume = check.object_value(data.get("auto_resume"), "auto_resume settings")
+        check.boolean(auto_resume.get("enabled"), "auto_resume.enabled")
+        check.text_list(auto_resume.get("threads"), "auto_resume.threads")
+        check.number(auto_resume.get("buffer_seconds"), "auto_resume.buffer_seconds", minimum=0, integer=True)
+        check.number(auto_resume.get("backoff_seconds"), "auto_resume.backoff_seconds", minimum=1, integer=True)
+        check.number(auto_resume.get("max_retries_per_turn"), "auto_resume.max_retries_per_turn", minimum=1, integer=True)
+        check.text_value(auto_resume.get("message"), "auto_resume.message")
         aliases = check.object_value(data.get("aliases"), "account shortcuts")
         for key, value in aliases.items():
             check.text_value(key, "shortcut name")

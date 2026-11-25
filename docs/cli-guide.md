@@ -1,7 +1,7 @@
 # Command and option guide
 
 Use this guide to choose a command and understand every mycodex option.
-This guide targets mycodex v0.4.4; see the [changelog](../CHANGELOG.md) and
+This guide targets mycodex v0.4.5; see the [changelog](../CHANGELOG.md) and
 [everyday commands](cheatsheet.md).
 
 Command names and flags stay compatible. A saved account is called a **profile**
@@ -24,6 +24,7 @@ Official Codex commands/options pass through and have their own help:
 | `use NAME` | Choose your usual account for new terminal sessions. |
 | `quota` | Check usage left and when your limits reset. |
 | `rotation` | Choose how Codex switches accounts when usage runs low. |
+| `auto-resume` | Diagnose halted conversations and optionally retry 5h-limited ones (off by default). |
 | `remote-control` | Make this computer available in the ChatGPT phone app. |
 | `remote` | Check or manage the phone connection. |
 | `projects` | List project folders, add one, or tidy empty conversations. |
@@ -303,6 +304,74 @@ mycodex rotation log [OPTIONS]
 |---|---|
 | `-n, --lines N` | Show the last N lines; default 40. Use a positive whole number. |
 | `-f, --follow` | Keep showing new log lines. Press Ctrl-C to stop watching. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## auto-resume status
+
+Show auto-resume setting (off by default), diagnose halted threads, and show pending retries.
+
+```text
+mycodex auto-resume [status] [OPTIONS]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `--all` | Inspect every recent halted thread instead of only the latest one. |
+| `--json` | Show structured data for scripts instead of the usual table. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## auto-resume check
+
+Diagnose why recent threads stopped mid-turn and show 5-hour quota reset times without scheduling retries.
+
+```text
+mycodex auto-resume check [OPTIONS]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `--all` | Inspect every recent halted thread instead of only the latest one. |
+| `--json` | Show structured data for scripts instead of the usual table. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## auto-resume enable
+
+Opt in to automatic retry after 5-hour quota resets, globally or for specific thread IDs.
+
+```text
+mycodex auto-resume enable [ID ...]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `ID ...` | Optional thread IDs to allow; omit to enable globally. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## auto-resume disable
+
+Turn off automatic retry globally or for specific thread IDs, cancelling any matching pending jobs.
+
+```text
+mycodex auto-resume disable [ID ...]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `ID ...` | Optional thread IDs to remove; omit to disable globally and cancel pending jobs. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## auto-resume run
+
+Run one check-and-retry sweep for opted-in threads whose 5-hour quota window is open.
+
+```text
+mycodex auto-resume run [OPTIONS]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `--all` | Check every recent halted thread. |
+| `--json` | Show structured data for scripts instead of the usual table. |
 | `-h, --help` | Show instructions without needing required values. |
 
 ## threads list

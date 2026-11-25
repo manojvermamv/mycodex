@@ -12,7 +12,7 @@ import contextlib
 import json
 import os
 import time
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from . import paths, validation as check
 
@@ -46,6 +46,15 @@ def load(max_age: float = 0.0) -> dict[str, Any]:
         for original, copy in adopted.items():
             check.text_value(original, "original conversation")
             check.text_value(copy, "copied conversation")
+        resumes = check.object_value(data.get("auto_resume", {}), "auto-resume history")
+        for tid, item in resumes.items():
+            check.text_value(tid, "auto-resume thread id")
+            item = check.object_value(item, "auto-resume entry")
+            check.text_value(item.get("turn_id"), "auto-resume turn id")
+            check.text_value(item.get("status"), "auto-resume status")
+            check.timestamp(item.get("scheduled_for"), "auto-resume schedule time")
+            check.timestamp(item.get("updated_at"), "auto-resume update time")
+            check.text_value(item.get("resumed_turn_id"), "resumed turn id", optional=True)
     except check.InvalidData as exc:
         raise StateError(f"Account history file {paths.ACCOUNTS_STATE} needs repair: {exc}. No data was replaced.") from None
     data.setdefault("profiles", {})
@@ -177,3 +186,28 @@ def extend_pause(name: str, expected_until: int, until: int) -> None:
         entry = _entry(data, name)
         if entry.get("blocked_until") == expected_until and expected_until > time.time() and until > expected_until:
             entry["blocked_until"] = until
+
+
+def auto_resume_entries(max_age: float = 0.0) -> dict[str, dict[str, Any]]:
+    """thread_id -> saved auto-resume schedule/outcome record."""
+    return {k: dict(v) for k, v in (load(max_age).get("auto_resume") or {}).items()}
+
+
+def save_auto_resume(thread_id: str, entry: dict[str, Any]) -> None:
+    with editing() as data:
+        data.setdefault("auto_resume", {})[thread_id] = dict(entry)
+
+
+def cancel_auto_resume(thread_ids: Iterable[str] | None = None) -> list[str]:
+    """Mark matching pending auto-resume entries cancelled; returns cancelled thread IDs."""
+    targets = set(thread_ids) if thread_ids is not None else None
+    cancelled: list[str] = []
+    now = int(time.time())
+    with editing() as data:
+        entries = data.get("auto_resume") or {}
+        for tid, entry in entries.items():
+            if entry.get("status") == "pending" and (targets is None or tid in targets):
+                entry["status"] = "cancelled"
+                entry["updated_at"] = now
+                cancelled.append(tid)
+    return cancelled

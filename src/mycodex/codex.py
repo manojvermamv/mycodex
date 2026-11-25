@@ -123,8 +123,9 @@ def threads(limit: int = 200) -> list[dict[str, Any]]:
         return []
     try:
         cols = {row[1] for row in conn.execute("pragma table_info(threads)")}
-        wanted = [c for c in ("id", "created_at", "updated_at", "source", "model_provider", "cwd",
-                              "name", "title", "project_id", "archived", "first_user_message")
+        wanted = [c for c in ("id", "created_at", "updated_at", "source", "thread_source", "model_provider",
+                              "cwd", "name", "title", "project_id", "archived", "first_user_message",
+                              "rollout_path")
                   if c in cols]
         rows = conn.execute(f"select {', '.join(wanted)} from threads order by updated_at desc limit ?",
                             (limit,)).fetchall()
@@ -174,6 +175,22 @@ def recent_log_errors(since_seconds: int = 3600, pattern: str = "%401%") -> list
             "select ts, level, target, substr(feedback_log_body, 1, 200) as body from logs "
             "where ts > ? and level in ('ERROR','WARN') and feedback_log_body like ? "
             "order by id desc limit 20", (int(time.time()) - since_seconds, pattern)).fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
+def recent_thread_logs(thread_id: str, limit: int = 40) -> list[dict[str, Any]]:
+    """Return recent log lines associated with `thread_id` from logs_*.sqlite."""
+    conn = _connect("logs")
+    if not conn:
+        return []
+    try:
+        rows = conn.execute(
+            "select id, ts, level, target, substr(feedback_log_body, 1, 500) as body from logs "
+            "where thread_id = ? order by id desc limit ?", (thread_id, limit)).fetchall()
         return [dict(row) for row in rows]
     except sqlite3.Error:
         return []

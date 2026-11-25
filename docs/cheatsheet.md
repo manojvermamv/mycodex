@@ -99,10 +99,12 @@ open in the [review](project-review.md#deferred-service-lifecycle-issues).
 ## Learn an option
 
 ```bash
+mycodex auto-resume check            # diagnose halted thread & 5h reset (off by default)
+mycodex feed <THREAD_ID> --message "Try again" --no-wait
 mycodex help
 mycodex help quota redeem
 mycodex projects clean --help
 mycodex -- --help                    # official Codex's own commands and options
 ```
 
-See [v0.4.4 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).
+See [v0.4.5 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).

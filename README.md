@@ -19,8 +19,8 @@ The Codex you get is the unmodified original. mycodex is a small, dependency-fre
 tool around it: it prepares each account's Codex home, runs a local rotation proxy in
 front of the ChatGPT backend, and manages the remote-control service.
 
-The current version is **v0.4.4** (2026-11-22). See the [changelog](CHANGELOG.md),
-[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.4), and
+The current version is **v0.4.5** (2026-11-25). See the [changelog](CHANGELOG.md),
+[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.5), and
 [everyday commands](docs/cheatsheet.md). The complete source, tests, and public docs
 are versioned together.
 The [restart and recovery plan](docs/redeployment.md) explains a guarded deployment

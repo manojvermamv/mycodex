@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.4.5 — 2026-11-25
+
+- **Opt-In Auto-Resume Engine (`auto_resume.py`)**: Added thread halt diagnosis,
+  classification (`quota_5h`, `approval`, `other`), and quota-window auto-resume
+  (disabled by default: `auto_resume.enabled = false`, `threads = []`).
+  - Only turns blocked by 5-hour quota exhaustion (`quota_5h`, including cascading
+    Free-profile `model_not_found` fallback when all Plus profiles in rotation are
+    5h-limited) are eligible when explicitly opted in globally or per-thread.
+  - Approval blocks (`waitingOnApproval`) and unrelated failures are never auto-retried.
+  - Persists idempotent schedule/resume tracking per `(thread_id, turn_id)` in
+    `state/accounts.json`, waits until `reset_at + buffer_seconds`, re-verifies live
+    quota at wake-up with configurable backoff, clears stale proxy quota pauses for
+    confirmed ready profiles, and dispatches `"Try again"` cleanly via `thread/resume`
+    + `turn/start` inside `mycodex-remote.service`.
+- **Thread-Targeted `feed` Command (`remote_cmd.py`, `cli.py`)**: Extended `mycodex feed`
+  and `mycodex remote feed` to detect UUID/thread-prefix targets and resume/feed existing
+  threads via `thread/resume` + `turn/start` (supporting both `--message` and positional
+  text with `--no-wait`), while preserving `seed` behavior for directory targets.
+- **New `mycodex auto-resume` CLI Group**: Added `status`, `check`, `enable`,
+  `disable` (which immediately cancels pending jobs), and `run`.
+- **Test Suite & Documentation**: Added isolated unit tests in `tests/test_auto_resume.py`;
+  all **178 tests pass**. Updated `docs/cli-guide.md` and `docs/cheatsheet.md`.
+
 ## v0.4.4 — 2026-11-22
 
 - **Mobile Relay Thread Visibility (`threadSource: "user"`)**: Fixed seeded project conversations
