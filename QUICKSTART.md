@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.4.5**, dated 2026-11-25.
+This guide targets **v0.4.6**, dated 2026-11-26.
 The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
 for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
 

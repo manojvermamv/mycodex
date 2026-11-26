@@ -107,4 +107,4 @@ mycodex projects clean --help
 mycodex -- --help                    # official Codex's own commands and options
 ```
 
-See [v0.4.5 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).
+See [v0.4.6 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).
