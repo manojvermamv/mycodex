@@ -145,9 +145,12 @@ marked fixed above are resolved; source changes do not reload running modules.
 These are the two remaining high-priority issues saved for separate work, as requested.
 They were reproduced with mocked lifecycle functions; no running relay was stopped.
 
-### R01: forced account removal stops the phone connection before confirmation
+### R01: forced account removal stops the phone connection before confirmation *(Resolved)*
 
-Trigger: removal targets the active phone relay, uses `--force`, and the user then
+> **Resolved**: `accounts.profile_remove` now confirms before calling `remote_stop()`,
+> checks `"reloading"` state, and aborts if `systemctl stop`/`disable` fails.
+
+Trigger (historical): removal targets the active phone relay, uses `--force`, and the user then
 declines confirmation. `profile_remove` stops the service before asking. Cancelling
 can therefore interrupt the connection while keeping the saved account. Until fixed,
 avoid forced removal during active work, or switch the relay deliberately beforehand.

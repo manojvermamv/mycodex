@@ -26,6 +26,10 @@ class AppServerError(RuntimeError):
     pass
 
 
+class AppServerTimeoutError(AppServerError):
+    pass
+
+
 class AppServer:
     def __init__(self, socket_path: str | Path, home: Path | None = None, timeout: float = 30):
         self.socket_path = str(socket_path)
@@ -126,11 +130,11 @@ class AppServer:
     def _fill(self, deadline: float) -> None:
         remaining = deadline - time.time()
         if remaining <= 0:
-            raise AppServerError("timed out waiting for the app-server")
+            raise AppServerTimeoutError("timed out waiting for the app-server")
         try:
             chunk = self._queue.get(timeout=remaining)
         except queue.Empty:
-            raise AppServerError("timed out waiting for the app-server") from None
+            raise AppServerTimeoutError("timed out waiting for the app-server") from None
         if chunk is None:
             err = self._stderr
             raise AppServerError("control socket closed" + (f": {err.decode(errors='replace').strip()}" if err else ""))
@@ -144,14 +148,16 @@ class AppServer:
 
     def _write(self, data: bytes) -> None:
         assert self.proc and self.proc.stdin
-        self.proc.stdin.write(data)
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(data)
+            self.proc.stdin.flush()
+        except OSError as exc:
+            raise AppServerError("control socket closed") from exc
 
-    def _send(self, message: dict[str, Any]) -> None:
-        data = json.dumps(message).encode()
+    def _send_frame(self, opcode: int, data: bytes) -> None:
         mask = os.urandom(4)
         size = len(data)
-        header = bytes([0x81])
+        header = bytes([0x80 | (opcode & 0x0F)])
         if size < 126:
             header += bytes([0x80 | size])
         elif size < 65536:
@@ -159,6 +165,9 @@ class AppServer:
         else:
             header += bytes([0x80 | 127]) + struct.pack(">Q", size)
         self._write(header + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+
+    def _send(self, message: dict[str, Any]) -> None:
+        self._send_frame(0x1, json.dumps(message).encode())
 
     def _receive(self, deadline: float) -> dict[str, Any]:
         payload = b""
@@ -172,7 +181,10 @@ class AppServer:
             data = self._need(size, deadline)
             if opcode == 0x8:
                 raise AppServerError("app-server closed the connection")
-            if opcode in (0x9, 0xA):
+            if opcode == 0x9:
+                self._send_frame(0xA, data)
+                continue
+            if opcode == 0xA:
                 continue
             payload += data
             if fin:
@@ -215,7 +227,7 @@ class AppServer:
         while time.time() < deadline:
             try:
                 message = self._receive(deadline)
-            except AppServerError:
+            except AppServerTimeoutError:
                 return None
             if matches(message):
                 return message
@@ -257,3 +269,37 @@ class StdioAppServer(AppServer):
         if not isinstance(message, dict):
             raise AppServerError("app-server returned a non-object message")
         return message
+
+
+def read_thread_with_turns(server: AppServer, thread_id: str, *, sort_direction: str = "desc",
+                           limit: int = 1, items_view: str = "summary") -> dict[str, Any]:
+    """Read thread metadata and page turns via `thread/turns/list` (avoiding deprecated includeTurns)."""
+    thread = dict(server.result("thread/read", {"threadId": thread_id})["thread"])
+    if not thread.get("turns"):
+        turns: list[dict[str, Any]] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        while True:
+            req: dict[str, Any] = {
+                "threadId": thread_id,
+                "sortDirection": sort_direction,
+                "limit": limit,
+                "itemsView": items_view,
+            }
+            if cursor:
+                req["cursor"] = cursor
+            turns_resp = server.result("thread/turns/list", req)
+            if not isinstance(turns_resp, dict) or not isinstance(turns_resp.get("data"), list):
+                raise AppServerError("thread/turns/list returned an invalid page")
+            turns.extend(turns_resp["data"])
+            cursor = turns_resp.get("nextCursor")
+            if not cursor:
+                break
+            if cursor in seen_cursors:
+                raise AppServerError("thread/turns/list: server repeated a pagination cursor")
+            if len(turns) >= limit:
+                break
+            seen_cursors.add(cursor)
+        if turns:
+            thread["turns"] = list(reversed(turns)) if sort_direction == "desc" else turns
+    return thread

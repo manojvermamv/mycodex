@@ -27,7 +27,8 @@ explanation before the command runs. Foreground phone mode rejects service-only 
 Damaged settings/history are preserved, so correct the reported file or recover it
 from a backup. Never erase account history just to clear a quota cache.
 
-The two deferred service issues are [R01 and R06](docs/project-review.md#deferred-service-lifecycle-issues).
+The remaining deferred service issue is [R06](docs/project-review.md#deferred-service-lifecycle-issues)
+(R01 forced-removal ordering is now fixed).
 No running service is automatically restarted to load these source changes.
 
 ## 1. Check prerequisites
@@ -36,7 +37,7 @@ You need:
 
 - a Linux host with a systemd user instance (Debian 13 tested);
 - Python 3.10 or newer (`python3 --version`);
-- the official [Codex CLI](https://developers.openai.com/codex/cli) 0.160.x;
+- the official [Codex CLI](https://developers.openai.com/codex/cli) 0.169.x;
 - one or more ChatGPT accounts with Codex access.
 
 Install Codex if it is missing:

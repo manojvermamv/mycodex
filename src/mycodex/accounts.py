@@ -273,12 +273,11 @@ def profile_remove(name: str, assume_yes: bool, keep_home: bool, force: bool) ->
     cfg = config.load()
     profile = _resolve(name, cfg)
     service = remote.service_info().get("ActiveState")
-    if cfg["remote"].get("profile") == profile.name and service in ("active", "activating"):
-        if not force:
-            ui.error(f"'{profile.name}' is the relay account of the running remote-control service",
-                     ["mycodex remote start --profile <other>", "or pass --force to stop the service"])
-            return 1
-        remote_stop()
+    needs_service_stop = cfg["remote"].get("profile") == profile.name and service in ("active", "activating", "reloading")
+    if needs_service_stop and not force:
+        ui.error(f"'{profile.name}' is the relay account of the running remote-control service",
+                 ["mycodex remote start --profile <other>", "or pass --force to stop the service"])
+        return 1
     users = [p for p in procs.scan(with_sockets=False)
              if p.profile == profile.name and p.role.startswith(("codex", "remote-control", "mycodex"))]
     if users and not force:
@@ -289,6 +288,10 @@ def profile_remove(name: str, assume_yes: bool, keep_home: bool, force: bool) ->
     if not ui.confirm(f"Remove account {profile.name}: {what}?", assume_yes=assume_yes):
         ui.info("nothing changed")
         return 1
+    if needs_service_stop:
+        if not remote_stop():
+            ui.error("could not stop the running remote-control service; account was left unchanged")
+            return 1
     _stop_profile_daemon(profile)
     if keep_home:
         moved = profiles.retire(profile.home)
@@ -508,6 +511,6 @@ def pick_start_profile(cfg: dict[str, Any]) -> str | None:
     return next((n for n in order if n not in blocked and n not in cfg["rotation"]["disabled"]), order[0])
 
 
-def remote_stop() -> None:
+def remote_stop() -> bool:
     from .remote_cmd import stop  # local import to avoid a cycle
-    stop(quiet=True)
+    return stop(quiet=True) == 0

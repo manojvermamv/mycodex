@@ -92,7 +92,7 @@ def classify(proc: Proc, proxies: dict[int, str] | None = None) -> str:
     exe = os.path.basename(argv[0])
     rest = argv[1:]
     joined = " ".join(argv)
-    if exe == "codex" or "/bin/codex" in argv[0]:
+    if exe == "codex":
         if "pid-update-loop" in rest:
             return "daemon updater"
         if "app-server" in rest and "--managed-daemon" in rest:

@@ -17,9 +17,17 @@ from typing import Any, Callable
 from . import paths, profiles, ui
 from .profiles import Profile
 
-NO_MODEL_COMMANDS = frozenset({"login", "logout", "completion", "mcp", "features", "sandbox", "debug", "apply", "a",
-                               "help", "update", "cloud", "plugin", "plugins", "doctor"})
-INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help"})
+NO_MODEL_COMMANDS = frozenset({
+    "login", "logout", "completion", "mcp", "features", "sandbox", "debug", "apply", "a",
+    "help", "update", "cloud", "plugin", "plugins", "doctor",
+    "archive", "delete", "unarchive", "queue", "migrate-rollouts", "migrate-nfs-db", "exec-server",
+})
+INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help", "--print-startup-config"})
+_VALUE_FLAGS = frozenset({
+    "-c", "--config", "-m", "--model", "-p", "--profile", "-s", "--sandbox",
+    "-a", "--ask-for-approval", "-C", "--cd", "--add-dir", "--local-provider",
+    "--remote", "--remote-auth-token-env", "--enable", "--disable", "--listen", "--sock",
+})
 
 
 def codex_env(profile: Profile, role: str) -> dict[str, str]:
@@ -31,15 +39,44 @@ def codex_env(profile: Profile, role: str) -> dict[str, str]:
     })
 
 
+_APP_SERVER_NO_MODEL = frozenset({"proxy", "daemon", "generate-ts", "generate-json-schema", "help"})
+_REMOTE_CONTROL_NO_MODEL = frozenset({"start", "stop", "status", "pair", "clients", "help"})
+
+
 def wants_proxy(codex_args: list[str]) -> bool:
     """Does this codex invocation talk to the model (and so benefit from rotation)?"""
-    if not codex_args:
+    positionals: list[str] = []
+    idx = 0
+    while idx < len(codex_args):
+        arg = codex_args[idx]
+        if arg in INFO_FLAGS:
+            return False
+        if arg == "--":
+            # Everything after '--' is a positional prompt/argument, not a flag or subcommand.
+            return True if not positionals else positionals[0] not in NO_MODEL_COMMANDS
+        if arg.startswith("-"):
+            flag = arg.split("=", 1)[0]
+            if flag in ("-i", "--image") and "=" not in arg:
+                idx += 1
+                while idx < len(codex_args) and not codex_args[idx].startswith("-"):
+                    idx += 1
+                continue
+            if "=" not in arg and flag in _VALUE_FLAGS:
+                idx += 2
+            else:
+                idx += 1
+            continue
+        positionals.append(arg)
+        idx += 1
+    if not positionals:
         return True
-    first = codex_args[0]
-    if first in NO_MODEL_COMMANDS or first in INFO_FLAGS:
+    cmd = positionals[0]
+    if cmd in NO_MODEL_COMMANDS:
         return False
-    if first in ("remote-control", "app-server") and len(codex_args) > 1 and not codex_args[1].startswith("-"):
-        return False  # remote-control start|stop|pair, app-server proxy|daemon|generate-*: no model client
+    if cmd == "app-server":
+        return not any(p in _APP_SERVER_NO_MODEL for p in positionals[1:])
+    if cmd == "remote-control":
+        return not any(p in _REMOTE_CONTROL_NO_MODEL for p in positionals[1:])
     return True
 
 

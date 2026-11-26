@@ -90,12 +90,15 @@ def consume(profile: profiles.Profile, idempotency_key: str | None = None,
             outcome = response.get("outcome")
             if outcome not in ("reset", "alreadyRedeemed", "nothingToReset", "noCredit"):
                 raise appserver.AppServerError("reset redemption returned an unknown outcome; retry with the same key")
+            # #6: finish_reset before the post-consume snapshot so a failure in rateLimits/read
+            # does not leave a spent reset_attempt key persisted in state; preserve snapshot errors
+            # and keep quota pause until the post-consume quota is verified.
+            if idempotency_key is None:
+                state.finish_reset(profile.name)
             snapshot = server.result("account/rateLimits/read")
         q = _snapshot(profile, snapshot)
         if outcome in ("reset", "alreadyRedeemed") and q.eligible:
             state.clear_quota_pause(profile.name)
-        if idempotency_key is None:
-            state.finish_reset(profile.name)
         return {"profile": profile.name, "outcome": outcome, "idempotency_key": key, "quota": quota.to_dict(q)}
 
 

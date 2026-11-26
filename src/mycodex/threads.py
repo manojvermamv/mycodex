@@ -21,7 +21,7 @@ OPENAI = "openai"
 
 def hidden(rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Live threads the phone cannot list: another provider tag and no adopted copy yet."""
-    rows = codex.threads(limit=5000) if rows is None else rows
+    rows = codex.threads(limit=None) if rows is None else rows
     adopted = state.adoptions()
     return [t for t in rows if (t.get("model_provider") or OPENAI) != OPENAI
             and not t.get("archived") and t["id"] not in adopted]
@@ -73,8 +73,7 @@ def list_threads(show_all: bool, as_json: bool, limit: int = 40) -> int:
 
 
 def _find(thread_id: str) -> dict[str, Any]:
-    rows = codex.threads(limit=5000)
-    matches = [t for t in rows if t["id"] == thread_id] or [t for t in rows if t["id"].startswith(thread_id)]
+    matches = codex.find_threads(thread_id)
     if not matches:
         raise SystemExit(f"Error: no thread matches '{thread_id}' (mycodex threads --all)")
     if len(matches) > 1:
@@ -113,7 +112,7 @@ def adopt(thread_id: str, name: str | None, archive_original: bool) -> int:
     box.update("forking", f"{thread['id']} ({thread.get('model_provider')}) -> openai")
     with appserver.AppServer(sock, timeout=180) as server:
         result = server.result("thread/fork", {"threadId": thread["id"], "modelProvider": OPENAI,
-                                               "cwd": thread.get("cwd")})
+                                               "cwd": thread.get("cwd"), "excludeTurns": True})
         copy = result["thread"]
         box.update("naming", copy["id"])
         server.result("thread/name/set", {"threadId": copy["id"], "name": title})

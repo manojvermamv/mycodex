@@ -113,8 +113,13 @@ def stop(quiet: bool = False) -> int:
         if not quiet:
             ui.info("remote-control service is not installed")
         return 0
-    remote._systemctl("stop", paths.REMOTE_UNIT)
-    remote._systemctl("disable", paths.REMOTE_UNIT)
+    stop_res = remote._systemctl("stop", paths.REMOTE_UNIT)
+    disable_res = remote._systemctl("disable", paths.REMOTE_UNIT)
+    if stop_res.returncode != 0 or disable_res.returncode != 0:
+        if not quiet:
+            detail = (stop_res.stderr or disable_res.stderr or stop_res.stdout or disable_res.stdout).strip()
+            ui.error("could not stop/disable the remote-control service" + (f": {detail}" if detail else ""))
+        return 1
     if not quiet:
         ui.success("remote-control service stopped and disabled (phone link is offline)")
     return 0
@@ -285,7 +290,11 @@ def pair(wait: bool = True) -> int:
             box.update("waiting", "enter the code in the ChatGPT app (Ctrl-C to stop waiting)")
             try:
                 claimed = server.result("remoteControl/pairing/status", {"manualPairingCode": code}).get("claimed")
-            except appserver.AppServerError:
+            except appserver.AppServerError as exc:
+                if "closed" in str(exc).lower() or (server.proc is not None and server.proc.poll() is not None):
+                    box.clear()
+                    ui.error(f"remote-control server disconnected: {exc}")
+                    return 1
                 claimed = False
             if claimed:
                 box.clear()
@@ -332,6 +341,9 @@ def _wait_for_turn(server: appserver.AppServer, title: str, thread_id: str, turn
                                and note.get("params", {}).get("turn", {}).get("id") == turn_id)
     except KeyboardInterrupt:
         done = None
+    except appserver.AppServerError as exc:
+        box.clear()
+        return f"disconnected ({exc})"
     box.clear()
     turn = (done or {}).get("params", {}).get("turn", {})
     return turn.get("status") or status
@@ -371,7 +383,7 @@ def feed_thread(thread_id: str, message: str | None, wait: bool = True) -> int:
         ("Phone account", profile or "-"),
         ("Continue", f"on the phone or `mycodex resume {thread['id']}`"),
     ])
-    return 1 if status in ("failed", "interrupted") else 0
+    return 1 if status in ("failed", "interrupted") or status.startswith("disconnected") else 0
 
 
 def _looks_like_thread_target(value: str | None) -> bool:
@@ -428,7 +440,7 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
         ("Phone account", profile or "-"),
         ("Continue", f"on the phone (project {project['name']}) or `mycodex resume {thread['id']}`"),
     ])
-    return 1 if status in ("failed", "interrupted") else 0
+    return 1 if status in ("failed", "interrupted") or status.startswith("disconnected") else 0
 
 
 def foreground(profile: str | None, mode: str | None) -> int:

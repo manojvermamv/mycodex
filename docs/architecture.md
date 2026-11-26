@@ -375,8 +375,9 @@ server, copies the name with `thread/name/set`, keeps the project with
 `thread/metadata/update`, optionally archives the original, and records the pair in
 `state/accounts.json` so the original is no longer reported as hidden.
 The mapping is written at the end; failure after fork can leave a partial copy and retry
-is not fully idempotent. Direct thread lookup scans only the latest 5,000 rows, while
-display reads at most 2,000. Database errors can be represented as empty results.
+is not fully idempotent. Direct thread lookup queries SQLite directly (`find_threads`),
+while display reads at most 2,000. Database errors log warnings to `stderr` and return
+empty results.
 
 `threads link ID --project DIR_OR_NAME_OR_ID` assigns an existing thread and calls
 `thread/resume` to load it on the running server, without starting a turn. A `notLoaded`
@@ -421,7 +422,7 @@ leaves the account homes untouched. Threads prodex created keep their provider t
 
 ## Compatibility guards
 
-The proxy relies on Codex 0.160 behaviour: the `openai_base_url` setting, the immediate
+The proxy relies on Codex 0.169 behaviour: the `openai_base_url` setting, the immediate
 HTTPS fallback after a 426, the `auth.json` layout and refresh endpoint, and the
 app-server methods above. `mycodex doctor` reports other Codex versions as a warning; after
 a Codex update, check `mycodex remote status` and a short `mycodex exec`.

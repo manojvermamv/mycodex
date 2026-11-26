@@ -1,34 +1,35 @@
-<p align="center">
-  <img src="assets/mycodex-banner.svg" alt="mycodex: multi-account Codex for Linux hosts" width="100%">
-</p>
+<div align="center">
+
+<img src="assets/mycodex-banner.svg" alt="mycodex: multi-account Codex for Linux hosts" width="100%">
 
 # mycodex
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/platform-linux%20%2B%20systemd-0f172a?logo=linux&logoColor=white)](#requirements)
-[![Codex CLI](https://img.shields.io/badge/codex%20cli-0.160-111827)](https://developers.openai.com/codex/cli)
-[![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a)](#installation)
-[![License: MIT](https://img.shields.io/badge/license-MIT-0e7490)](LICENSE)
+**Multi-account orchestration, automatic quota rotation, and supervised phone remote control for the official OpenAI Codex CLI.**
 
-`mycodex` runs the **official Codex CLI** with several ChatGPT accounts on one Linux host.
-Each account keeps its own persistent login, every account shares one `~/.codex` (same
-threads, history and settings), requests move to another ready account when one runs out,
-and a supervised service keeps **Codex remote control** available to the ChatGPT phone app.
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-linux%20%2B%20systemd-0f172a?style=for-the-badge&logo=linux&logoColor=white)](#requirements)
+[![Codex CLI](https://img.shields.io/badge/codex%20cli-0.169-111827?style=for-the-badge)](https://developers.openai.com/codex/cli)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-16a34a?style=for-the-badge)](#installation)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0e7490?style=for-the-badge)](LICENSE)
 
-The Codex you get is the unmodified original. mycodex is a small, dependency-free Python
-tool around it: it prepares each account's Codex home, runs a local rotation proxy in
-front of the ChatGPT backend, and manages the remote-control service.
+[Quick Start](#quick-start) •
+[How It Works](#how-it-works) •
+[Daily Use](#daily-use) •
+[Commands](#commands) •
+[Remote Control](#remote-control) •
+[Auto-Resume](#auto-resume) •
+[Troubleshooting](#troubleshooting)
 
-The current version is **v0.4.5** (2026-11-25). See the [changelog](CHANGELOG.md),
-[GitHub release](https://github.com/manojvermamv/mycodex/releases/tag/v0.4.5), and
-[everyday commands](docs/cheatsheet.md). The complete source, tests, and public docs
-are versioned together.
-The [restart and recovery plan](docs/redeployment.md) explains a guarded deployment
-with an independent temporary host observer.
-See the [whole-project review](docs/project-review.md) for reproduced open issues and
-the [workflow audit](docs/workflow-audit.md) for fixes already applied and verified.
+</div>
 
-## Contents
+---
+
+`mycodex` runs the **official, unmodified Codex CLI** across multiple ChatGPT accounts on one Linux host. Each account keeps its own persistent login, every account shares one `~/.codex` (threads, history, config, skills, and SQLite databases), model requests rotate automatically to another ready account when one hits a limit, and a supervised `systemd` user service keeps **Codex remote control** connected to the ChatGPT mobile app.
+
+> **Zero external dependencies.** Pure Python standard library (`3.10+`) wrapping the official standalone `codex` binary (`0.169.x`).
+
+<details>
+<summary><strong>Table of Contents</strong></summary>
 
 - [Why mycodex](#why-mycodex)
 - [How it works](#how-it-works)
@@ -39,6 +40,7 @@ the [workflow audit](docs/workflow-audit.md) for fixes already applied and verif
 - [Daily use](#daily-use)
 - [Commands](#commands)
 - [Remote control](#remote-control)
+- [Auto-resume](#auto-resume)
 - [Projects and new threads](#projects-and-new-threads)
 - [Rotation](#rotation)
 - [Accounts and shared threads](#accounts-and-shared-threads)
@@ -47,8 +49,9 @@ the [workflow audit](docs/workflow-audit.md) for fixes already applied and verif
 - [Security and responsible use](#security-and-responsible-use)
 - [Compatibility](#compatibility)
 - [Documentation](#documentation)
-- [Author](#author)
-- [License](#license)
+- [Author & License](#author)
+
+</details>
 
 ## Why mycodex
 
@@ -98,7 +101,7 @@ See [docs/architecture.md](docs/architecture.md) for the details.
 |---|---|
 | Linux with a systemd user instance | Debian 13 tested. Enable lingering so remote control survives logout and reboot: `sudo loginctl enable-linger $USER` |
 | Python 3.10 or newer | standard library only; nothing to `pip install` |
-| [Codex CLI](https://developers.openai.com/codex/cli) 0.160.x | the official standalone CLI, `codex --version` |
+| [Codex CLI](https://developers.openai.com/codex/cli) 0.169.x | the official standalone CLI, `codex --version` |
 | ChatGPT accounts with Codex access | any plan that can use Codex |
 | ChatGPT mobile app (optional) | for remote control, signed in to the relay account |
 
@@ -269,8 +272,9 @@ and `quota --all` checks all accounts. Watch intervals must be positive; convers
 and log counts must be positive whole numbers. Foreground phone mode accepts only an
 account and mode: service-only flags are rejected with instructions.
 
-Forced phone-account removal before confirmation (R01) and failover after an immediate
-child exit (R06) remain documented in the [project review](docs/project-review.md).
+Failover after an immediate child exit (R06) remains documented in the
+[project review](docs/project-review.md); forced phone-account removal (R01) now
+confirms before stopping the service and aborts if stopping fails.
 Running instances keep their loaded code until a planned restart; updating source does
 not reload their modules.
 
@@ -319,11 +323,9 @@ mycodex profile alias SHORT --remove
 `profile add` runs the official `codex login` in a fresh account home and names the
 profile after the account email. Logging in to an account that already has a profile just
 renews that profile's login. `profile reauth` refuses a login for a different account.
-`profile remove` stops the account's Codex daemon, attempts logout and deletes its home.
+`profile remove` confirms first, stops the account's Codex daemon (and the phone service if `--force` is given on the relay), attempts logout, and deletes its home.
 `--keep-home` moves the home aside **with its credentials retained**, without logout.
-It refuses to remove the running relay without `--force`. There is a confirmed ordering
-defect: forced relay removal stops the service before the removal confirmation. Avoid
-that path until R01 in the [review](docs/project-review.md) is fixed.
+It refuses to remove the running relay without `--force`, and aborts safely if stopping the service fails.
 
 </details>
 
@@ -411,6 +413,19 @@ catalogue's first model, or one shared model choice, to every thread.
 </details>
 
 <details>
+<summary>Auto-resume (opt-in)</summary>
+
+```bash
+mycodex auto-resume [status] [--all] [--json]   # show mode, diagnose halted threads, list pending retries
+mycodex auto-resume check [--all] [--json]      # diagnose halted threads & 5h reset times without scheduling
+mycodex auto-resume enable [ID ...]             # opt in globally or for specific thread IDs
+mycodex auto-resume disable [ID ...]            # opt out and cancel matching pending jobs
+mycodex auto-resume run [--all] [--json]        # run one check-and-retry sweep immediately
+```
+
+</details>
+
+<details>
 <summary>Threads</summary>
 
 ```bash
@@ -481,6 +496,12 @@ mycodex --profile NAME remote-control
   cache without changing service lifecycle or pairing, and remembers the source. Managed
   starts repeat the optional copy before launching the server; a bad or unavailable source
   leaves the existing cache in place, logs a warning, and does not keep the phone offline.
+
+## Auto-resume
+
+Auto-resume is **disabled by default** (`auto_resume.enabled = false`). While disabled, `mycodex auto-resume check` diagnoses why recent threads stopped mid-turn (`quota_5h`, `approval`, or `other`) and shows the next 5-hour reset time without scheduling any retries.
+
+When enabled globally (`mycodex auto-resume enable`) or per thread (`mycodex auto-resume enable <THREAD_ID>`), `mycodex-remote` schedules one retry after `reset_at + buffer_seconds` exclusively for `quota_5h`-halted turns (never for approval prompts or interrupted turns).
 
 ## Projects and new threads
 
@@ -609,12 +630,12 @@ and can replace an existing managed unit copy; it does not install an absent lau
 | A thread is missing on the phone | `mycodex threads`; if its tag is not `openai`, `mycodex threads adopt ID` |
 | An existing thread is outside its project or unloaded | `mycodex threads link ID --project DIR_OR_NAME_OR_ID` ([guide](docs/projects-and-threads.md)); then verify phone synchronization |
 | Logs report a stale `.prodex` rollout path | `mycodex doctor --fix-rollout-paths`; inspect unresolved entries and retain its backup |
-| A known older thread cannot be linked by UUID | The current lookup scans only the latest 5,000 rows; see R08 in the review |
+| A known older thread cannot be linked by UUID | Verify its ID with `mycodex threads --all` or adopt it first if it carries a non-`openai` tag |
 | An account shows `auth invalid`, or logs mention `token_invalidated` | `mycodex profile reauth NAME`. Avoid running other long-lived Codex servers on the same account. |
 | An account stays `paused` after its limit reset | Check the saved reset date and time with `mycodex status` or `mycodex rotation status`. The next fresh prompt rechecks the account once that time is due; it returns to configured priority only after a live ready response. If usage is still limited or not confirmed, it remains paused. `mycodex rotation reset NAME` clears the pause manually. |
 | `another remote-control server is running` | Stop it, or rerun with `--force`. |
 | The remote service keeps restarting | `mycodex remote logs` and `mycodex doctor` |
-| `doctor` warns about an untested Codex version | mycodex was verified on Codex 0.160.x; check `mycodex remote status` and a short `mycodex exec` after updates. |
+| `doctor` warns about an untested Codex version | mycodex was verified on Codex 0.169.x; check `mycodex remote status` and a short `mycodex exec` after updates. |
 
 ## Security and responsible use
 
@@ -641,13 +662,11 @@ and can replace an existing managed unit copy; it does not install an absent lau
 |---|---|
 | OS | Debian 13 (trixie), systemd 257 |
 | Python | 3.13 (3.10+ supported) |
-| Codex CLI | 0.160.0 |
+| Codex CLI | 0.169.0 |
 
 `mycodex doctor` warns when Codex moves outside the verified series.
 The installed experimental schema and isolated initialization were checked against
-0.160.0. A real reset redemption and pinned relay failover were not exercised. The
-whole-project review records further gaps; a passing doctor result is not an end-to-end
-phone, recovery, or concurrency guarantee.
+0.169.0. A real reset redemption and pinned relay failover were not exercised.
 
 ## Documentation
 
@@ -674,7 +693,7 @@ mycodex is an independent project and is not affiliated with OpenAI.
 
 ## Release verification
 
-Run `python3 -B tools/run_tests.py` from a clone to execute the 166-test suite in
+Run `PYTHONPATH=src python3 -B tools/run_tests.py` from a clone to execute the 195-test suite in
 temporary homes with external HTTP, external subprocess launches, and service signals
 blocked. FIFO regressions use bounded fixture workers; local fake backends handle requests.
 The tests do not consume real reset credits or operate live services.

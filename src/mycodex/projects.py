@@ -136,7 +136,8 @@ def clean(value: str, dry_run: bool = False, assume_yes: bool = False) -> int:
         candidates = []
         for row in member_threads(server, project["id"]):
             try:
-                thread = server.result("thread/read", {"threadId": row["id"], "includeTurns": True})["thread"]
+                thread = appserver.read_thread_with_turns(server, row["id"], sort_direction="asc",
+                                                          limit=2, items_view="full")
             except appserver.AppServerError as exc:
                 ui.warn(f"skipped {row['id']}: could not verify history ({exc})")
                 continue
@@ -154,7 +155,8 @@ def clean(value: str, dry_run: bool = False, assume_yes: bool = False) -> int:
             return 1
         for row in candidates:
             # Recheck immediately before archive; never clean a thread that gained a turn.
-            current = server.result("thread/read", {"threadId": row["id"], "includeTurns": True})["thread"]
+            current = appserver.read_thread_with_turns(server, row["id"], sort_direction="asc",
+                                                       limit=2, items_view="full")
             children = pages(server, "thread/list", {"ancestorThreadId": row["id"], "modelProviders": [],
                                                     "sourceKinds": SOURCE_KINDS, "useStateDbOnly": True})
             if current.get("projectId") != project["id"] or not disposable(current) or children:

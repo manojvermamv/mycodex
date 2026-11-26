@@ -139,7 +139,7 @@ mycodex profile reauth [NAME] [--browser]
 
 ## profile remove
 
-Remove a saved account. Forced removal of the phone account currently stops the connection before confirmation; this issue remains open.
+Remove a saved account. Confirms before stopping the phone connection (even with `--force`).
 
 ```text
 mycodex profile remove NAME [OPTIONS]

@@ -73,7 +73,17 @@ def audit(fix: bool = False) -> list[dict[str, Any]]:
                 columns = {r[1] for r in reader.execute("pragma table_info(threads)")}
                 if not {"id", "rollout_path"} <= columns:
                     continue
-                rows = reader.execute("select id, rollout_path from threads where rollout_path like '%/.prodex/%'").fetchall()
+                prof_root = str(paths.PROFILES_ROOT).rstrip("/") + "/"
+                raw_rows = reader.execute(
+                    "select id, rollout_path from threads "
+                    "where rollout_path like '%/.prodex/%' or rollout_path like '%/.codex/profiles/%' "
+                    "or substr(rollout_path, 1, ?) = ?",
+                    (len(prof_root), prof_root),
+                ).fetchall()
+                rows = [
+                    (tid, old) for tid, old in raw_rows
+                    if "/.prodex/" in old or not Path(old).is_file()
+                ]
                 report["legacy"] = len(rows)
                 changes = []
                 for thread_id, old in rows:

@@ -9,8 +9,10 @@ empty data that would discard a pending operation's identity.
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import os
+import threading
 import time
 from typing import Any, Iterable, Iterator
 
@@ -20,46 +22,60 @@ from . import paths, validation as check
 class StateError(OSError):
     pass
 
-_cache: dict[str, Any] = {"at": 0.0, "data": None}
+_cache_lock = threading.RLock()
+_cache: dict[str, Any] = {"at": 0.0, "data": None, "sig": None}
+
+
+def _state_sig() -> tuple[int, int, int] | None:
+    try:
+        st = paths.ACCOUNTS_STATE.stat()
+        return (st.st_ino, st.st_mtime_ns, st.st_size)
+    except FileNotFoundError:
+        return None
 
 
 def load(max_age: float = 0.0) -> dict[str, Any]:
-    if max_age and _cache["data"] is not None and time.monotonic() - _cache["at"] < max_age:
-        return _cache["data"]
-    try:
-        data = json.loads(paths.ACCOUNTS_STATE.read_text())
-    except FileNotFoundError:
-        data = {}
-    except (ValueError, RecursionError):
-        raise StateError(f"Account history file {paths.ACCOUNTS_STATE} is unreadable. Keep it for recovery; no data was replaced.") from None
-    try:
-        check.object_value(data, "account history")
-        entries = check.object_value(data.get("profiles", {}), "saved accounts")
-        for name, entry in entries.items():
-            check.text_value(name, "saved account name")
-            entry = check.object_value(entry, "saved account")
-            for key in ("blocked_until", "blocked_at"):
-                check.timestamp(entry.get(key), key)
-            check.text_value(entry.get("blocked_reason"), "pause reason", optional=True)
-            check.text_value(entry.get("reset_attempt"), "pending reset key", optional=True)
-        adopted = check.object_value(data.get("adopted", {}), "conversation copy history")
-        for original, copy in adopted.items():
-            check.text_value(original, "original conversation")
-            check.text_value(copy, "copied conversation")
-        resumes = check.object_value(data.get("auto_resume", {}), "auto-resume history")
-        for tid, item in resumes.items():
-            check.text_value(tid, "auto-resume thread id")
-            item = check.object_value(item, "auto-resume entry")
-            check.text_value(item.get("turn_id"), "auto-resume turn id")
-            check.text_value(item.get("status"), "auto-resume status")
-            check.timestamp(item.get("scheduled_for"), "auto-resume schedule time")
-            check.timestamp(item.get("updated_at"), "auto-resume update time")
-            check.text_value(item.get("resumed_turn_id"), "resumed turn id", optional=True)
-    except check.InvalidData as exc:
-        raise StateError(f"Account history file {paths.ACCOUNTS_STATE} needs repair: {exc}. No data was replaced.") from None
-    data.setdefault("profiles", {})
-    _cache.update(at=time.monotonic(), data=data)
-    return data
+    with _cache_lock:
+        sig = _state_sig()
+        if max_age and _cache["data"] is not None and _cache["sig"] == sig and time.monotonic() - _cache["at"] < max_age:
+            return copy.deepcopy(_cache["data"])
+        try:
+            data = json.loads(paths.ACCOUNTS_STATE.read_text())
+        except FileNotFoundError:
+            data = {}
+        except (ValueError, RecursionError):
+            raise StateError(f"Account history file {paths.ACCOUNTS_STATE} is unreadable. Keep it for recovery; no data was replaced.") from None
+        try:
+            check.object_value(data, "account history")
+            entries = check.object_value(data.get("profiles", {}), "saved accounts")
+            for name, entry in entries.items():
+                check.text_value(name, "saved account name")
+                entry = check.object_value(entry, "saved account")
+                for key in ("blocked_until", "blocked_at"):
+                    check.timestamp(entry.get(key), key)
+                check.text_value(entry.get("blocked_reason"), "pause reason", optional=True)
+                check.text_value(entry.get("reset_attempt"), "pending reset key", optional=True)
+            adopted = check.object_value(data.get("adopted", {}), "conversation copy history")
+            for original, copy_id in adopted.items():
+                check.text_value(original, "original conversation")
+                check.text_value(copy_id, "copied conversation")
+            resumes = check.object_value(data.get("auto_resume", {}), "auto-resume history")
+            for tid, item in resumes.items():
+                check.text_value(tid, "auto-resume thread id")
+                item = check.object_value(item, "auto-resume entry")
+                check.text_value(item.get("turn_id"), "auto-resume turn id")
+                check.text_value(item.get("status"), "auto-resume status")
+                check.timestamp(item.get("scheduled_for"), "auto-resume schedule time")
+                check.timestamp(item.get("updated_at"), "auto-resume update time")
+                check.text_value(item.get("resumed_turn_id"), "resumed turn id", optional=True)
+        except check.InvalidData as exc:
+            raise StateError(f"Account history file {paths.ACCOUNTS_STATE} needs repair: {exc}. No data was replaced.") from None
+        data.setdefault("profiles", {})
+        if _state_sig() == sig:
+            _cache.update(at=time.monotonic(), data=data, sig=sig)
+        else:
+            _cache.update(at=0.0, data=None, sig=None)
+        return copy.deepcopy(data)
 
 
 @contextlib.contextmanager
@@ -76,7 +92,9 @@ def editing() -> Iterator[dict[str, Any]]:
         with os.fdopen(fd, "w") as handle:
             json.dump(data, handle, indent=1, sort_keys=True)
         os.replace(tmp, paths.ACCOUNTS_STATE)
-        _cache.update(at=time.monotonic(), data=data)
+        snapshot = copy.deepcopy(data)
+        with _cache_lock:
+            _cache.update(at=time.monotonic(), data=snapshot, sig=_state_sig())
 
 
 def _entry(data: dict[str, Any], name: str) -> dict[str, Any]:

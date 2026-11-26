@@ -221,7 +221,7 @@ def run(fix: bool = False, assume_yes: bool = False, as_json: bool = False) -> i
                else "run `sudo loginctl enable-linger $USER` so the remote service survives logout")
 
     tags: dict[str, int] = {}
-    rows = codex.threads(limit=5000)
+    rows = codex.threads(limit=None)
     for thread in rows:
         if not thread.get("archived"):
             tag = thread.get("model_provider") or "?"

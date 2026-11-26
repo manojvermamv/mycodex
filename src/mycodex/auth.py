@@ -139,6 +139,8 @@ def credentials(home: Path, margin: int = REFRESH_MARGIN) -> Credentials:
 
 
 def _lock_path(home: Path) -> Path:
+    if home.is_dir():
+        return home / "auth.lock"
     digest = hashlib.sha256(str(home.resolve()).encode()).hexdigest()[:12]
     return paths.state_dir("locks") / f"auth-{home.name}-{digest}.lock"
 

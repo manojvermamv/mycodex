@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.6 — 2026-11-26
+
+- **Codex CLI 0.169.x Alignment & Reliability Hardening (`TESTED_CODEX_SERIES = "0.169."`)**:
+  - **Model Cache & Sync (`model_cache.py`)**: `fetch_and_write()` / `_fetch_envelope()` now write full 5-field `ModelsCacheEntry` envelopes, derive `client_version` from `codex.version()`, send `ChatGPT-Account-Id` with `401` token refresh retry, validate RFC3339 `fetched_at` + `etag` + `client_version`, preserve target `identity`, and refuse to clobber a valid relay cache with an invalid/envelope-less source.
+  - **Shared State & Locks (`state.py`, `auth.py`, `profiles.py`)**: Serialized `state.load()` reads/publication under `_cache_lock` with `stat()` signature validation (`_state_sig`) and `copy.deepcopy()` isolation; `auth._locked()` acquires `<CODEX_HOME>/auth.lock`; `profiles.prepare_home()` shares `.sqlite-maintenance.lock`, `.tmp/plugins.sync.lock`, and `session_index.jsonl.lock`, and unlinks mismatched `-wal`/`-shm` symlinks for private SQLite DBs.
+  - **Auto-Resume & Redemption (`auto_resume.py`, `redemption.py`, `remote.py`)**: Aligned `classify()` and `_current_turn_span()` with `codex 0.169.0` events (`usageLimitExceeded`, `usage_limit_exceeded`, `rateLimitExceeded`, `task_started`, `turn_aborted`) and sub-second `ts_nanos` log scoping; atomically claimed due retries under `state.editing()` enforcing `max_retries_per_turn`; rotated global `tick()` batches; caught `SystemExit` in `remote.py`; cleared `reset_attempt` before post-consume `account/rateLimits/read` in `redemption.consume()`.
+  - **App-Server, Proxy, Launcher & Maintenance (`appserver.py`, `proxy.py`, `launch.py`, `procs.py`, `maintenance.py`, `codex.py`, `threads.py`, `accounts.py`, `remote_cmd.py`)**: Replaced deprecated `includeTurns=True` with `thread/turns/list` pagination (`read_thread_with_turns`) and `"excludeTurns": True` on `thread/fork`; added masked WebSocket Pong (`0x8A`) and disconnect propagation; updated `launch.wants_proxy()` for `0.169.0` commands/flags (keeping `agents` proxied) and `procs.classify()` exact basename matching; matched curly-apostrophe quota phrases (`You\u2019ve`), excluded cached `auth invalid` profiles from `/models`, enforced 64 MiB `MAX_REQUEST_BODY`, and locked `RotationProxy.pool()`; added literal `PROFILES_ROOT` matching in `maintenance.audit()`, SQLite warning logs + `find_threads()` literal prefix lookup in `codex.py`, and pre-stop confirmation + `systemctl` failure propagation in `accounts.profile_remove()` / `remote_cmd.stop()`.
+- **Test Suite & Documentation**: Consolidated audit regressions into `tests/test_codex_0169_audit.py` (**195 isolated tests pass**); refreshed `README.md`, `QUICKSTART.md`, `helptext.py`, and `docs/*.md`.
+
 ## v0.4.5 — 2026-11-25
 
 - **Opt-In Auto-Resume Engine (`auto_resume.py`)**: Added thread halt diagnosis,

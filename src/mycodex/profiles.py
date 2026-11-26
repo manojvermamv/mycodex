@@ -32,19 +32,22 @@ SHARED_DIRS = (
     "memories", "memories_extensions", "rules", "skills", "agents", "plugins",
     "thread-writer-locks", ".tmp/plugins", ".tmp/marketplaces",
 )
+LOCK_DIRS = {"thread-writer-locks"}
+LOCK_FILES = {".tmp/rollout-maintenance.lock", ".sqlite-maintenance.lock",
+              ".tmp/plugins.sync.lock", "session_index.jsonl.lock"}
 SHARED_FILES = (
-    "history.jsonl", "session_index.jsonl", "config.toml", "managed_config.toml", "environments.toml",
+    "history.jsonl", "session_index.jsonl",
+    "config.toml", "managed_config.toml", "environments.toml",
     "AGENTS.md", "AGENTS.override.md", ".credentials.json",
-    ".tmp/plugins.sha", ".tmp/known_marketplaces.json", ".tmp/app-server-remote-plugin-sync-v1",
-    ".tmp/rollout-maintenance.lock",
+    ".tmp/plugins.sha", ".tmp/known_marketplaces.json",
+    ".tmp/app-server-remote-plugin-sync-v1",
+    *sorted(LOCK_FILES),
 )
 SQLITE_RE = re.compile(r"^[a-z][a-z0-9_]*_\d+\.sqlite$")
 PROFILE_CONFIG_SUFFIX = ".config.toml"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$")
 # Per-home data that can be folded into ~/.codex when a home is adopted (migration, doctor --fix).
 MERGE_JSONL = {"session_index.jsonl": "updated_at", "history.jsonl": "ts"}
-LOCK_DIRS = {"thread-writer-locks"}
-LOCK_FILES = {".tmp/rollout-maintenance.lock"}
 
 
 @dataclass
@@ -150,6 +153,11 @@ def prepare_home(home: Path, adopt: bool = False, dry_run: bool = False,
     report = HomeReport()
     for rel, is_dir in shared_entries(shared):
         link, target = home / rel, shared / rel
+        if rel.endswith(("-wal", "-shm")):
+            base_rel = rel.rsplit("-", 1)[0]
+            base_path = home / base_rel
+            if base_rel in report.private or (base_path.exists() and not base_path.is_symlink()):
+                continue
         if link.is_symlink():
             if os.readlink(link) == str(target):
                 continue
@@ -170,6 +178,16 @@ def prepare_home(home: Path, adopt: bool = False, dry_run: bool = False,
         report.linked.append(rel)
         if not dry_run:
             _link(link, target, is_dir)
+    if home.is_dir():
+        for item in sorted(home.iterdir(), key=lambda p: p.name):
+            if SQLITE_RE.match(item.name) and item.is_file() and not item.is_symlink():
+                for suffix in ("-wal", "-shm"):
+                    sidecar = home / (item.name + suffix)
+                    marker = f"{item.name}{suffix} (unlinked: private {item.name})"
+                    if sidecar.is_symlink():
+                        report.linked.append(marker)
+                        if not dry_run:
+                            sidecar.unlink()
     return report
 
 

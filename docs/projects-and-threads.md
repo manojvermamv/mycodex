@@ -60,9 +60,9 @@ threads with another provider must be adopted for phone visibility. If hydration
 the saved assignment is retained and the command reports the failure so it can be retried.
 `notLoaded` is a normal unloaded state, rather than proof of a missing mobile thread.
 The command verifies the returned ID, project, and loaded status (`idle` or `active`).
-The database lookup currently searches only the latest 5,000 threads, even for full IDs;
-an older thread can therefore fail lookup. Investigate writer/resume errors rather than
-restarting the service to force hydration.
+The database lookup queries SQLite directly by exact thread ID or literal prefix without a
+row ceiling. Investigate writer/resume errors rather than restarting the service to force
+hydration.
 
 ## Clean empty or ready-check threads
 
@@ -181,7 +181,7 @@ Other useful methods with the same connection:
 |---|---|---|
 | `thread/metadata/update` | `{"threadId", "projectId"}` | file an existing thread (for example one started in the TUI) under a project; `""` removes it |
 | `thread/resume` | `{"threadId": "<id>", "excludeTurns": true}` | load a stored thread without starting a model turn |
-| `thread/read` | `{"threadId": "<id>", "includeTurns": false}` | inspect a stored thread without hydrating it |
+| `thread/read` | `{"threadId": "<id>"}` | inspect a stored thread without deprecated full-history hydration (page turns via `thread/turns/list`) |
 | `thread/list` | `{"projectId": "<id>"}` | threads in one project (`null` for threads without one) |
 | `project/import` | `{"name", "roots", "threads": [ids], "idempotencyKey"}` | create a project and file existing threads in one call |
 | `thread/archive` | `{"threadId"}` | archive a thread |
@@ -246,8 +246,9 @@ See the [complete command guide](cli-guide.md) for every project/conversation pa
 `mycodex help projects clean` and `mycodex threads link --help` work without required IDs.
 Names containing spaces should be quoted. `threads list -n N` requires a positive whole
 number; zero, negative, and malformed values are rejected consistently for table/JSON
-output. The 2,000-row listing and 5,000-row ID lookup ceilings remain open (R08).
-The service lifecycle issues R01 and R06 are saved in [project-review.md](project-review.md).
+output. The 2,000-row listing cap remains for `threads list`, while direct ID/prefix
+lookup queries SQLite directly (R08).
+The remaining deferred service lifecycle issue R06 is saved in [project-review.md](project-review.md).
 
 ## v0.3.0 release
 

@@ -65,6 +65,7 @@ NEUTRAL_EVENTS = {"response.created", "response.in_progress", "response.queued"}
 PRECOMMIT_SECONDS = 4.0
 PRECOMMIT_BYTES = 256 * 1024
 ERROR_BODY_LIMIT = 1 << 20
+MAX_REQUEST_BODY = 64 * 1024 * 1024
 CONNECT_TIMEOUT = 20
 READ_TIMEOUT = 900          # Codex enforces its own stream idle timeout; this only bounds a dead upstream
 POOL_TTL = 20
@@ -84,7 +85,8 @@ MODEL_CODES = frozenset({
 })
 PROFILE_CODES = frozenset({"deactivated_workspace"})
 OVERLOAD_CODES = frozenset({"server_is_overloaded", "overloaded_error"})
-USAGE_PHRASES = ("you've hit your usage limit", "you have hit your usage limit", "you hit your usage limit",
+USAGE_PHRASES = ("you've hit your usage limit", "you\u2019ve hit your usage limit",
+                 "you have hit your usage limit", "you hit your usage limit",
                  "usage limit has been reached")
 USAGE_HINTS = ("try again at", "request to your admin", "more access now")
 OVERLOAD_PHRASES = ("selected model is at capacity", "backend under high demand", "experiencing high demand",
@@ -415,6 +417,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data = bytearray()
             while True:
                 size = int(self.rfile.readline(1024).split(b";")[0].strip() or b"0", 16)
+                if size < 0 or len(data) + size > MAX_REQUEST_BODY:
+                    raise ValueError("request body exceeds maximum allowed size")
                 if size == 0:
                     while self.rfile.readline(1024) not in (b"\r\n", b"\n", b""):
                         pass
@@ -422,6 +426,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data += self.rfile.read(size)
                 self.rfile.readline(16)
         length = int(self.headers.get("Content-Length") or 0)
+        if length < 0 or length > MAX_REQUEST_BODY:
+            raise ValueError("invalid Content-Length")
         if length:
             return self.rfile.read(length)
         return b"" if self.command in ("POST", "PUT", "PATCH") else None
@@ -451,14 +457,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._local(503, {"error": {"type": "mycodex_settings", "message": str(exc)}})
             return
         is_models_path = self.path.split("?")[0].endswith("/models")
-        if is_models_path:
-            members, cfg = proxy.pool()
+        if is_models_path and plan:
+            _, cfg = proxy.pool()
             models_source_name = cfg.get("remote", {}).get("models_source")
-            best_profile = None
-            if models_source_name:
-                best_profile = next((p for p in members if p.name == models_source_name), None)
+            plan = [p for p in plan if getattr(quota.cached(p.name), "status", None) != "auth invalid"]
+            best_profile = next((p for p in plan if p.name == models_source_name), None) if models_source_name else None
             if not best_profile:
-                for p in members:
+                for p in plan:
                     id_plan = profiles.identity(p.home).get("plan")
                     q = quota.cached(p.name)
                     q_plan = q.plan if q else None
@@ -786,14 +791,15 @@ class RotationProxy:
 
     # -- account selection -----------------------------------------------------------------
     def pool(self) -> tuple[list[Profile], dict[str, Any]]:
-        now = time.monotonic()
-        if self._pool and now - self._pool[0] < POOL_TTL:
-            return self._pool[1], self._pool[2]
-        cfg = config.load()
-        disabled = set(cfg["rotation"]["disabled"])
-        members = [p for p in profiles.all(cfg) if p.logged_in and (p.name not in disabled or p.name == self.owner)]
-        self._pool = (now, members, cfg)
-        return members, cfg
+        with self.lock:
+            now = time.monotonic()
+            if self._pool and now - self._pool[0] < POOL_TTL:
+                return self._pool[1], self._pool[2]
+            cfg = config.load()
+            disabled = set(cfg["rotation"]["disabled"])
+            members = [p for p in profiles.all(cfg) if p.logged_in and (p.name not in disabled or p.name == self.owner)]
+            self._pool = (now, members, cfg)
+            return members, cfg
 
     @staticmethod
     def _lookup(table: dict[str, tuple[str, float]], key: str | None) -> str | None:
@@ -873,7 +879,8 @@ class RotationProxy:
                         healthy.append(member)
                 if healthy:
                     result = healthy + [p for p in result if p not in healthy]
-        fallback = [p for p in members if p.name not in unconfirmed]
+        fallback = [p for p in members if p.name not in unconfirmed
+                    and not str(blocked.get(p.name, (0, ""))[1]).startswith(("auth:", "profile:"))]
         if not result and fallback:
             # everything is blocked: ask the account that frees up first, so Codex gets a real answer
             result = sorted(fallback, key=lambda p: blocked.get(p.name, (0, ""))[0])[:1]

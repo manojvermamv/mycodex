@@ -23,10 +23,16 @@ QUOTA_5H = "quota_5h"
 APPROVAL_BLOCKED = "approval"
 OTHER = "other"
 
-_USAGE_LIMIT_MARKERS = ("usage limit", "rate limit", "too many requests", "usage_limit_reached", "429")
+_USAGE_LIMIT_MARKERS = ("usage limit", "rate limit", "too many requests", "usage_limit_reached",
+                        "usage_limit_exceeded", "429")
+_QUOTA_ERROR_CODES = frozenset({
+    "usage_limit_reached", "usage_limit_exceeded", "rate_limit_exceeded",
+    "usageLimitExceeded", "rateLimitExceeded",
+})
 _MODEL_NOT_FOUND_CODES = ("model_not_found", "modelNotFound")
 _TICK_INTERVAL = 30.0
 _last_tick_at = 0.0
+_tick_offset = 0
 
 
 @dataclass
@@ -116,14 +122,44 @@ def _capable_pool_all_limited(cfg: dict[str, Any], quotas: dict[str, quota.Quota
     return True
 
 
-def _extract_tool_call_approval(events: list[dict[str, Any]]) -> tuple[str, str] | None:
-    """Detect an unanswered escalated tool call in the latest rollout slice."""
-    start_idx = 0
+def _current_turn_span(events: list[dict[str, Any]], turn_id: str | None = None) -> list[dict[str, Any]]:
+    """Return events belonging to `turn_id` (or the latest turn from the last task/turn start onward)."""
+    if turn_id is not None:
+        # Locate the turn matching `turn_id` if present; if rollout only has other turns, return [].
+        matched_start: int | None = None
+        saw_other_turn = False
+        for idx, ev in enumerate(events):
+            p = ev.get("payload") or {}
+            if ev.get("type") == "event_msg" and p.get("type") in ("task_started", "turn_started", "task_complete", "turn_aborted"):
+                ev_tid = p.get("turn_id")
+                if ev_tid == turn_id:
+                    if p.get("type") in ("task_started", "turn_started"):
+                        matched_start = idx
+                elif ev_tid:
+                    saw_other_turn = True
+        if matched_start is not None:
+            return events[matched_start:]
+        if saw_other_turn:
+            return []
+    last_start: int | None = None
     for idx, ev in enumerate(events):
         p = ev.get("payload") or {}
-        if ev.get("type") == "event_msg" and p.get("type") in ("task_complete", "turn_started"):
+        if ev.get("type") == "event_msg" and p.get("type") in ("task_started", "turn_started"):
+            last_start = idx
+    if last_start is not None:
+        return events[last_start:]
+    return events
+
+
+def _extract_tool_call_approval(events: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """Detect an unanswered escalated tool call in the latest rollout turn."""
+    span = _current_turn_span(events)
+    start_idx = 0
+    for idx, ev in enumerate(span):
+        p = ev.get("payload") or {}
+        if ev.get("type") == "event_msg" and p.get("type") in ("task_complete", "turn_aborted"):
             start_idx = idx
-    tail = events[start_idx:]
+    tail = span[start_idx:]
     answered: set[str] = set()
     pending: list[tuple[str, str]] = []
     for ev in tail:
@@ -144,12 +180,41 @@ def _extract_tool_call_approval(events: list[dict[str, Any]]) -> tuple[str, str]
     return None
 
 
-def _has_429_evidence(events: list[dict[str, Any]], log_rows: list[dict[str, Any]]) -> bool:
+def _event_ts(ev: dict[str, Any]) -> float | None:
+    raw = ev.get("timestamp")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str) and raw:
+        try:
+            return datetime.datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _has_429_evidence(events: list[dict[str, Any]], log_rows: list[dict[str, Any]],
+                      turn_id: str | None = None) -> bool:
+    span = _current_turn_span(events, turn_id=turn_id)
+    start_ts = _event_ts(span[0]) if span else None
+    end_ts: float | None = None
+    if span:
+        last_p = span[-1].get("payload") or {}
+        if span[-1].get("type") == "event_msg" and last_p.get("type") in ("task_complete", "turn_aborted"):
+            end_ts = _event_ts(span[-1])
     for row in log_rows:
+        if "turn_id" in row and row["turn_id"] is not None:
+            if turn_id is not None and row["turn_id"] != turn_id:
+                continue
+        elif start_ts is not None and row.get("ts") is not None:
+            row_ts = float(row["ts"]) + float(row.get("ts_nanos") or 0) / 1_000_000_000.0
+            if row_ts < start_ts or (end_ts is not None and row_ts > end_ts):
+                continue
+        elif turn_id is not None:
+            continue
         body = str(row.get("body") or "").lower()
         if "429" in body or "usage limit" in body:
             return True
-    for ev in events[-25:]:
+    for ev in span[-25:]:
         p = ev.get("payload") or {}
         if ev.get("type") == "response_item" and p.get("type") == "agent_message":
             content = p.get("content") or []
@@ -182,23 +247,42 @@ def classify(thread: dict[str, Any], rollout_events: list[dict[str, Any]], log_r
                          evidence, turn_status=(last_live_turn or {}).get("status") or "inProgress",
                          cwd=cwd, updated_at=updated_at)
 
-    # 2. Extract final turn outcome from live thread or rollout `task_complete`.
+    # 2. Extract final turn outcome from live thread or current rollout turn span.
+    span = _current_turn_span(rollout_events)
+    last_task_started: dict[str, Any] | None = None
     last_task_complete: dict[str, Any] | None = None
-    for ev in reversed(rollout_events):
+    last_turn_aborted: dict[str, Any] | None = None
+    for ev in reversed(span):
         p = ev.get("payload") or {}
-        if ev.get("type") == "event_msg" and p.get("type") == "task_complete":
-            last_task_complete = ev
-            break
+        if ev.get("type") == "event_msg":
+            ptype = p.get("type")
+            if ptype == "task_started" and last_task_started is None:
+                last_task_started = ev
+            elif ptype == "task_complete" and last_task_complete is None:
+                last_task_complete = ev
+            elif ptype == "turn_aborted" and last_turn_aborted is None:
+                last_turn_aborted = ev
 
-    turn_id = (last_live_turn or {}).get("id") or ((last_task_complete or {}).get("payload") or {}).get("turn_id")
+    turn_id = ((last_live_turn or {}).get("id")
+               or ((last_turn_aborted or {}).get("payload") or {}).get("turn_id")
+               or ((last_task_complete or {}).get("payload") or {}).get("turn_id")
+               or ((last_task_started or {}).get("payload") or {}).get("turn_id"))
     turn_status = (last_live_turn or {}).get("status")
-    err_obj = (last_live_turn or {}).get("error") or ((last_task_complete or {}).get("payload") or {}).get("error")
+    # M2: Only fall back to rollout error when live_thread is unavailable or the live turn itself has an error.
+    # This prevents stale rollout errors from overriding a healthy live turn.
+    if last_live_turn is not None:
+        err_obj = last_live_turn.get("error")
+    elif last_turn_aborted is not None:
+        err_obj = None
+    else:
+        err_obj = ((last_task_complete or {}).get("payload") or {}).get("error")
 
     if not err_obj:
-        if turn_status == "interrupted":
-            evidence.append(f"turn {turn_id} ended with status=interrupted")
+        if turn_status == "interrupted" or (last_live_turn is None and last_turn_aborted is not None):
+            reason = ((last_turn_aborted or {}).get("payload") or {}).get("reason") or "interrupted"
+            evidence.append(f"turn {turn_id} ended with status={reason}")
             return Diagnosis(tid, turn_id, True, OTHER, "Turn was interrupted", evidence,
-                             turn_status=turn_status, cwd=cwd, updated_at=updated_at)
+                             turn_status=turn_status or "interrupted", cwd=cwd, updated_at=updated_at)
         if live_thread is None:
             pending_call = _extract_tool_call_approval(rollout_events)
             if pending_call and last_task_complete is None:
@@ -210,7 +294,13 @@ def classify(thread: dict[str, Any], rollout_events: list[dict[str, Any]], log_r
                          turn_status=turn_status or "completed", cwd=cwd, updated_at=updated_at)
 
     err_msg = str(err_obj.get("message") or "")
-    err_code = str(err_obj.get("codexErrorInfo") or err_obj.get("codex_error_info") or "")
+    # M2: codexErrorInfo / codex_error_info may be a dict (e.g. {"httpConnectionFailed": {...}});
+    # extract the variant name as the code string in that case.
+    raw_code = err_obj.get("codexErrorInfo") or err_obj.get("codex_error_info") or ""
+    if isinstance(raw_code, dict):
+        err_code = next(iter(raw_code), "")
+    else:
+        err_code = str(raw_code)
     evidence.append(f"turn {turn_id} error ({err_code or 'error'}): {err_msg}")
     for row in log_rows:
         body = str(row.get("body") or "")
@@ -220,12 +310,12 @@ def classify(thread: dict[str, Any], rollout_events: list[dict[str, Any]], log_r
                 break
 
     lowered = err_msg.lower()
-    if any(m in lowered for m in _USAGE_LIMIT_MARKERS) or err_code in ("usage_limit_reached", "rate_limit_exceeded"):
+    if any(m in lowered for m in _USAGE_LIMIT_MARKERS) or err_code in _QUOTA_ERROR_CODES:
         return Diagnosis(tid, turn_id, True, QUOTA_5H, "5-hour usage limit reached", evidence,
                          turn_status=turn_status or "failed", cwd=cwd, updated_at=updated_at)
 
     is_model_fallback = err_code in _MODEL_NOT_FOUND_CODES or "not supported when using codex with a chatgpt account" in lowered
-    if is_model_fallback and (pool_all_limited or _has_429_evidence(rollout_events, log_rows)):
+    if is_model_fallback and (pool_all_limited or _has_429_evidence(rollout_events, log_rows, turn_id=turn_id)):
         evidence.append("all model-capable Plus accounts in rotation were 5h-limited, causing Free-profile model fallback")
         return Diagnosis(tid, turn_id, True, QUOTA_5H,
                          "5-hour usage window exhausted across Plus pool (cascaded to Free-account model_not_found)",
@@ -245,7 +335,8 @@ def _live_thread_map(thread_ids: list[str]) -> dict[str, dict[str, Any]]:
         with appserver.AppServer(sock, timeout=15) as server:
             for tid in thread_ids:
                 try:
-                    result[tid] = server.result("thread/read", {"threadId": tid, "includeTurns": True})["thread"]
+                    result[tid] = appserver.read_thread_with_turns(server, tid, sort_direction="desc",
+                                                                   limit=1, items_view="summary")
                 except appserver.AppServerError:
                     pass
     except (appserver.AppServerError, OSError):
@@ -254,13 +345,30 @@ def _live_thread_map(thread_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def diagnose(cfg: dict[str, Any] | None = None, *, all_threads: bool = False,
+             limit: int | None = None,
+             offset: int = 0,
+             thread_ids: list[str] | None = None,
              quotas: dict[str, quota.Quota] | None = None,
              live_threads: dict[str, dict[str, Any]] | None = None) -> list[Diagnosis]:
     cfg = cfg or config.load()
-    rows = [r for r in codex.threads(limit=200) if not r.get("archived") and not _is_subagent(r)]
+    rows = [r for r in codex.threads(limit=None) if not r.get("archived") and not _is_subagent(r)]
+    if thread_ids is not None:
+        wanted = set(thread_ids)
+        rows = [r for r in rows if r["id"] in wanted]
     if not rows:
         return []
-    targets = rows[:25] if all_threads else rows[:1]
+    if all_threads or thread_ids is not None:
+        if limit is None:
+            targets = rows[offset:]
+        elif limit <= 0:
+            targets = []
+        else:
+            start = offset % len(rows) if offset else 0
+            targets = rows[start:start + limit]
+    else:
+        targets = rows[:1]
+    if not targets:
+        return []
     pool_limited = _capable_pool_all_limited(cfg, quotas)
     live_map = live_threads if live_threads is not None else _live_thread_map([r["id"] for r in targets])
 
@@ -339,7 +447,7 @@ def reconcile_schedule(cfg: dict[str, Any], diagnoses: list[Diagnosis], resoluti
             if existing and existing.get("status") == "pending":
                 state.save_auto_resume(tid, {**existing, "status": "cancelled", "updated_at": now_ts})
             continue
-        if existing and existing.get("turn_id") == diag.turn_id and existing.get("status") in ("pending", "resumed"):
+        if existing and existing.get("turn_id") == diag.turn_id and existing.get("status") in ("pending", "resumed", "failed"):
             continue
         if resolution is None or (not resolution.ready_now and resolution.reset_at is None):
             continue
@@ -359,7 +467,8 @@ def reconcile_schedule(cfg: dict[str, Any], diagnoses: list[Diagnosis], resoluti
 
 def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
                 diagnose_all: bool = False, quotas: dict[str, quota.Quota] | None = None,
-                live_threads: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+                live_threads: dict[str, dict[str, Any]] | None = None,
+                limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     """Diagnose enabled threads, reconcile schedules, and feed due retries once quota is open."""
     cfg = cfg or config.load()
     now_ts = int(time.time() if now is None else now)
@@ -371,8 +480,9 @@ def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
             state.cancel_auto_resume()
         return []
 
+    target_ids = None if (diagnose_all or cfg["auto_resume"]["enabled"]) else list(cfg["auto_resume"]["threads"])
     diags = diagnose(cfg, all_threads=diagnose_all or bool(cfg["auto_resume"]["threads"]),
-                     quotas=quotas, live_threads=live_threads)
+                     limit=limit, offset=offset, thread_ids=target_ids, quotas=quotas, live_threads=live_threads)
     resolution = resolve_window(cfg, quotas=quotas) if any(
         d.halted and d.classification == QUOTA_5H and is_enabled(cfg, d.thread_id) for d in diags
     ) else None
@@ -384,62 +494,98 @@ def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
         return []
 
     outcomes: list[dict[str, Any]] = []
-    # Re-verify live quota at wake-up before dispatching any feed.
-    live_res = resolution if (resolution is not None and quotas is not None) else resolve_window(cfg)
+    max_retries = int(cfg["auto_resume"].get("max_retries_per_turn", 1))
     backoff_s = int(cfg["auto_resume"].get("backoff_seconds", 30))
     message = str(cfg["auto_resume"].get("message") or "Try again")
 
+    # #5: Fail entries that have already exhausted their retry budget before attempting anything.
+    still_due: list[tuple[str, dict[str, Any]]] = []
+    for tid, e in due:
+        if int(e.get("attempts") or 0) >= max_retries:
+            state.save_auto_resume(tid, {**e, "status": "failed", "updated_at": now_ts})
+            outcomes.append({"thread_id": tid, "action": "failed", "reason": "max_retries_per_turn exceeded"})
+        else:
+            still_due.append((tid, e))
+    if not still_due:
+        return outcomes
+
+    # Re-verify live quota at wake-up before dispatching any feed.
+    live_res = resolution if (resolution is not None and quotas is not None) else resolve_window(cfg)
+
     if not live_res.ready_now:
+        # Quota API still lagging: reschedule without consuming a turn retry attempt.
         next_try = now_ts + backoff_s
-        for tid, e in due:
-            updated = {**e, "scheduled_for": next_try, "attempts": int(e.get("attempts") or 0) + 1, "updated_at": now_ts}
+        for tid, e in still_due:
+            updated = {**e, "scheduled_for": next_try, "updated_at": now_ts}
             state.save_auto_resume(tid, updated)
             outcomes.append({"thread_id": tid, "action": "backoff", "scheduled_for": next_try})
+        return outcomes
+
+    # Claim due jobs atomically under state lock before dispatching so concurrent callers
+    # cannot both attempt the same turn.
+    claimed: list[tuple[str, dict[str, Any]]] = []
+    with state.editing() as data:
+        ar_map = data.setdefault("auto_resume", {})
+        for tid, _ in still_due:
+            cur = ar_map.get(tid)
+            if not cur or cur.get("status") != "pending" or (cur.get("scheduled_for") or 0) > now_ts:
+                continue
+            attempts = int(cur.get("attempts") or 0) + 1
+            cur["attempts"] = attempts
+            cur["scheduled_for"] = now_ts + backoff_s
+            cur["status"] = "failed" if attempts >= max_retries else "pending"
+            cur["updated_at"] = now_ts
+            claimed.append((tid, dict(cur)))
+    if not claimed:
         return outcomes
 
     # Clear any stale proxy quota block on the confirmed ready account so the retry is accepted immediately.
     if live_res.account:
         state.clear_quota_pause(live_res.account)
 
-    sock, _ = remote_cmd.server_socket()
-    with appserver.AppServer(sock, timeout=60) as server:
-        for tid, e in due:
-            latest_cfg = config.load()
-            if not is_enabled(latest_cfg, tid):
-                state.save_auto_resume(tid, {**e, "status": "cancelled", "updated_at": now_ts})
-                outcomes.append({"thread_id": tid, "action": "cancelled"})
-                continue
-            try:
-                thread = server.result("thread/read", {"threadId": tid, "includeTurns": True})["thread"]
-            except appserver.AppServerError as exc:
-                outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
-                continue
-            turns = thread.get("turns") or []
-            last_turn = turns[-1] if turns else {}
-            thread_status = (thread.get("status") or {}).get("type")
-            if thread_status == "active" or last_turn.get("id") != e.get("turn_id") or last_turn.get("status") != "failed":
-                state.save_auto_resume(tid, {**e, "status": "superseded", "updated_at": now_ts})
-                outcomes.append({"thread_id": tid, "action": "superseded"})
-                continue
-            try:
-                new_turn_id = remote_cmd.dispatch_turn(server, tid, message)
-            except appserver.AppServerError as exc:
-                outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
-                continue
-            state.save_auto_resume(tid, {
-                **e,
-                "status": "resumed",
-                "resumed_turn_id": new_turn_id,
-                "attempts": int(e.get("attempts") or 0) + 1,
-                "updated_at": now_ts,
-            })
-            outcomes.append({"thread_id": tid, "action": "resumed", "turn_id": new_turn_id})
+    try:
+        sock, _ = remote_cmd.server_socket()
+        with appserver.AppServer(sock, timeout=60) as server:
+            for tid, e in claimed:
+                latest_cfg = config.load()
+                if not is_enabled(latest_cfg, tid):
+                    state.save_auto_resume(tid, {**e, "status": "cancelled", "updated_at": now_ts})
+                    outcomes.append({"thread_id": tid, "action": "cancelled"})
+                    continue
+                try:
+                    thread = appserver.read_thread_with_turns(server, tid, sort_direction="desc",
+                                                              limit=1, items_view="summary")
+                except appserver.AppServerError as exc:
+                    outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
+                    continue
+                turns = thread.get("turns") or []
+                last_turn = turns[-1] if turns else {}
+                thread_status = (thread.get("status") or {}).get("type")
+                if thread_status == "active" or last_turn.get("id") != e.get("turn_id") or last_turn.get("status") != "failed":
+                    state.save_auto_resume(tid, {**e, "status": "superseded", "updated_at": now_ts})
+                    outcomes.append({"thread_id": tid, "action": "superseded"})
+                    continue
+                try:
+                    new_turn_id = remote_cmd.dispatch_turn(server, tid, message)
+                except appserver.AppServerError as exc:
+                    outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
+                    continue
+                state.save_auto_resume(tid, {
+                    **e,
+                    "status": "resumed",
+                    "resumed_turn_id": new_turn_id,
+                    "updated_at": now_ts,
+                })
+                outcomes.append({"thread_id": tid, "action": "resumed", "turn_id": new_turn_id})
+    except (SystemExit, OSError, appserver.AppServerError) as exc:
+        for tid, _ in claimed:
+            outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
     return outcomes
 
 
 def tick() -> None:
     """Periodic hook run by `mycodex-remote`; skips all network work while disabled."""
-    global _last_tick_at
+    global _last_tick_at, _tick_offset
     now = time.time()
     cfg = config.load()
     entries = state.auto_resume_entries(max_age=2.0)
@@ -452,7 +598,11 @@ def tick() -> None:
     if not has_due and now - _last_tick_at < _TICK_INTERVAL:
         return
     _last_tick_at = now
-    for item in execute_due(cfg, now=now, diagnose_all=True):
+    offset = _tick_offset if cfg["auto_resume"]["enabled"] else 0
+    if cfg["auto_resume"]["enabled"]:
+        _tick_offset += 25
+    for item in execute_due(cfg, now=now, diagnose_all=bool(cfg["auto_resume"]["enabled"]),
+                            limit=25 if cfg["auto_resume"]["enabled"] else None, offset=offset):
         print(f"mycodex-remote: auto-resume thread={item['thread_id']} action={item['action']}"
               + (f" turn={item['turn_id']}" if item.get("turn_id") else ""), flush=True)
 

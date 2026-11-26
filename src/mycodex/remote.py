@@ -208,7 +208,7 @@ def run_server(profile: profiles.Profile, mode: str, cfg: dict[str, Any], servic
         from . import auto_resume
         try:
             auto_resume.tick()
-        except Exception as exc:
+        except (SystemExit, Exception) as exc:
             _say(f"auto-resume check failed: {exc}")
         if not remote_cfg.get("failover") or time.time() < next_check[0]:
             return None
