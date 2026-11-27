@@ -124,8 +124,9 @@ def _capable_pool_all_limited(cfg: dict[str, Any], quotas: dict[str, quota.Quota
 def _current_turn_span(events: list[dict[str, Any]], turn_id: str | None = None) -> list[dict[str, Any]]:
     """Return events belonging to `turn_id` (or the latest turn from the last task/turn start onward)."""
     if turn_id is not None:
-        # Locate the turn matching `turn_id` if present; if rollout only has other turns, return [].
+        # Locate the turn matching `turn_id` if present; stop at the next turn start if newer turns follow.
         matched_start: int | None = None
+        matched_end: int | None = None
         saw_other_turn = False
         for idx, ev in enumerate(events):
             p = ev.get("payload") or {}
@@ -134,10 +135,13 @@ def _current_turn_span(events: list[dict[str, Any]], turn_id: str | None = None)
                 if ev_tid == turn_id:
                     if p.get("type") in ("task_started", "turn_started"):
                         matched_start = idx
+                        matched_end = None
                 elif ev_tid:
                     saw_other_turn = True
+                    if matched_start is not None and matched_end is None and p.get("type") in ("task_started", "turn_started"):
+                        matched_end = idx
         if matched_start is not None:
-            return events[matched_start:]
+            return events[matched_start:matched_end]
         if saw_other_turn:
             return []
     last_start: int | None = None

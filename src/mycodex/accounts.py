@@ -13,12 +13,8 @@ from . import auth, codex, config, fmt, paths, procs, profiles, quota, remote, r
 from .profiles import Profile
 
 
-def _names(cfg: dict[str, Any] | None = None) -> list[str]:
-    return profiles.names(cfg)
-
-
 def _resolve(name: str, cfg: dict[str, Any]) -> Profile:
-    target = resolve.resolve(name, _names(cfg), cfg)
+    target = resolve.resolve(name, profiles.names(cfg), cfg)
     profile = profiles.get(target, cfg)
     assert profile is not None
     return profile
@@ -173,7 +169,7 @@ def profile_current(as_json: bool = False) -> int:
 
 def profile_use(name: str) -> int:
     with config.editing() as data:
-        target = resolve.resolve(name, _names(data), data)
+        target = resolve.resolve(name, profiles.names(data), data)
         data["active"] = target
     ui.success(f"New terminal sessions will use account {target}")
     return 0
@@ -203,7 +199,7 @@ def profile_add(name: str | None, browser: bool) -> int:
     if name and not profiles.valid_name(name):
         ui.error(f"'{name}' is not a valid profile name (letters, digits, . _ @ + -)")
         return 2
-    if name and name in _names(cfg):
+    if name and name in profiles.names(cfg):
         ui.error(f"profile '{name}' already exists", [f"mycodex profile reauth {name}"])
         return 1
     pending = profiles.new_pending()
@@ -221,7 +217,7 @@ def profile_add(name: str | None, browser: bool) -> int:
                 return 0
         target = name or profiles.slug(who.get("email") or "account")
         base, suffix = target, 2
-        while target in _names(cfg):
+        while target in profiles.names(cfg):
             target, suffix = f"{base}-{suffix}", suffix + 1
         home = profiles.install(pending, target)
         pending = None
@@ -229,7 +225,7 @@ def profile_add(name: str | None, browser: bool) -> int:
         if pending is not None:
             profiles.discard(pending)
     with config.editing() as data:
-        if not data.get("active") or data["active"] not in _names(data):
+        if not data.get("active") or data["active"] not in profiles.names(data):
             data["active"] = target
     ui.success(f"profile {target} added ({who.get('email') or 'unknown email'}, {who.get('plan') or '?'} plan) at {home}")
     return 0
@@ -308,7 +304,7 @@ def profile_remove(name: str, assume_yes: bool, keep_home: bool, force: bool) ->
         if data["remote"].get("profile") == profile.name:
             data["remote"]["profile"] = None
         if data.get("active") == profile.name:
-            remaining = _names(data)
+            remaining = profiles.names(data)
             data["active"] = remaining[0] if remaining else None
     state.forget(profile.name)
     ui.success(f"removed profile {profile.name}")
@@ -324,11 +320,11 @@ def profile_alias(name: str, alias: str | None, remove: bool) -> int:
                 return 1
             ui.success(f"removed alias {name} -> {target}")
             return 0
-        target = resolve.resolve(name, _names(data), data)
+        target = resolve.resolve(name, profiles.names(data), data)
         if not alias:
             ui.out(", ".join(resolve.aliases_for(target, data)) or "-")
             return 0
-        if alias in _names(data):
+        if alias in profiles.names(data):
             ui.error(f"'{alias}' is already a profile name")
             return 1
         data["aliases"][alias] = target
@@ -397,7 +393,7 @@ def rotation_status(as_json: bool) -> int:
     if as_json:
         print(json.dumps({**rot, "paused": {n: {"until": u, "reason": r} for n, (u, r) in blocked.items()}}, indent=2))
         return 0
-    names = _names(cfg)
+    names = profiles.names(cfg)
     order = [n for n in rot["order"] if n in names] + [n for n in names if n not in rot["order"]]
     quotas = quota.fetch_all([p for p in profiles.all(cfg) if p.name in order])
     ready = [n for n in order if quotas[n].eligible and n not in rot["disabled"] and n not in blocked]
@@ -444,7 +440,7 @@ def rotation_set(enable: bool, targets: list[str]) -> int:
             data["rotation"]["enabled"] = enable
             ui.success(f"rotation {'enabled' if enable else 'disabled'} for mycodex launches")
             return 0
-        names = _names(data)
+        names = profiles.names(data)
         for target in targets:
             name = resolve.resolve(target, names, data)
             disabled = [n for n in data["rotation"]["disabled"] if n != name]
@@ -464,7 +460,7 @@ def rotation_order(targets: list[str], clear: bool) -> int:
         if not targets:
             ui.out(" > ".join(data["rotation"]["order"]) or "(not set)")
             return 0
-        names = _names(data)
+        names = profiles.names(data)
         order = []
         for target in targets:
             name = resolve.resolve(target, names, data)
@@ -477,7 +473,7 @@ def rotation_order(targets: list[str], clear: bool) -> int:
 
 def rotation_reset(targets: list[str]) -> int:
     cfg = config.load()
-    names = [resolve.resolve(t, _names(cfg), cfg) for t in targets] or list(state.blocks(max_age=0))
+    names = [resolve.resolve(t, profiles.names(cfg), cfg) for t in targets] or list(state.blocks(max_age=0))
     for name in names:
         state.unblock(name)
         ui.success(f"{name}: pause cleared")
@@ -500,7 +496,7 @@ def rotation_log(lines: int, follow: bool) -> int:
 
 def pick_start_profile(cfg: dict[str, Any]) -> str | None:
     """The active profile, else the first one in rotation order that is not paused."""
-    names = _names(cfg)
+    names = profiles.names(cfg)
     if not names:
         return None
     active = profiles.active_name(cfg)

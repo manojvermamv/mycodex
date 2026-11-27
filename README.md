@@ -273,7 +273,7 @@ and log counts must be positive whole numbers. Foreground phone mode accepts onl
 account and mode: service-only flags are rejected with instructions.
 
 Failover after an immediate child exit (R06) remains documented in the
-[project review](docs/project-review.md); forced phone-account removal (R01) now
+[audit report](docs/mycodex-audit-report.md); forced phone-account removal (R01) now
 confirms before stopping the service and aborts if stopping fails.
 Running instances keep their loaded code until a planned restart; updating source does
 not reload their modules.
@@ -671,8 +671,7 @@ The installed experimental schema and isolated initialization were checked again
 ## Documentation
 
 - [QUICKSTART.md](QUICKSTART.md): from install to a paired phone, step by step
-- [docs/workflow-audit.md](docs/workflow-audit.md): audited workflow gaps, fixes, and validation limits
-- [docs/project-review.md](docs/project-review.md): whole-project review, reproduced open defects, and priorities
+- [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md): `codex 0.169.0` code audit, fixes, and verification record
 - [docs/projects-and-threads.md](docs/projects-and-threads.md): new project threads, with one command or through the app-server proxy
 - [docs/architecture.md](docs/architecture.md): accounts, the rotation proxy, the remote service and why each piece exists
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): how Codex was inspected and the decisions that followed
@@ -725,11 +724,7 @@ with no rollback. Fresh checks confirm the connected relay/proxy, original phone
 identity/pairing and project threads, and preserved independent Codex processes.
 
 The model catalogue routing decoupling, live backend fetching, plan-tier ranking, and
-**GPT-6.2 model family** support in **v0.4.3** was deployed at **2026-11-17 19:31:05 UTC**.
-Fresh checks confirm connected relay/proxy, retained pairing and active threads,
-and preserved independent Codex processes. The release has 29 modules and 167 isolated
-tests. See the [deployment record](docs/redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).
-
-R01/R06 and the other open review items are explicitly retained in the
-[project review](docs/project-review.md). Personal host notes, runtime state, credentials,
-and temporary recovery scripts are excluded from the public repository and archives.
+**GPT-6.2 model family** support in **v0.4.3** were deployed at **2026-11-17 19:31:05 UTC**;
+**v0.4.6** (`codex 0.169.0` alignment and 25-item audit fixes) is documented in [CHANGELOG.md](CHANGELOG.md)
+and [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md). Personal host notes, runtime state,
+credentials, and temporary recovery scripts are excluded from the public repository and archives.

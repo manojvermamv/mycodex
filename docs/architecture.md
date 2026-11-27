@@ -4,7 +4,7 @@ This document explains how mycodex works internally and why each mechanism exist
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
 The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.3** on 2026-11-17 (29 package modules, 167 isolated tests). See the [changelog](../CHANGELOG.md). [project-review.md](project-review.md) records open issues;
+**v0.4.6** on 2026-11-26 (197 isolated tests). See the [changelog](../CHANGELOG.md) and [mycodex-audit-report.md](mycodex-audit-report.md);
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -455,7 +455,7 @@ usage replies, failed-check cache invalidation, legacy readiness, login expiry/r
 validation, settings/history preservation, every subcommand help page, numeric options,
 account selection, preview forwarding/rejection, and foreground flag rejection. Real credit consumption, phone rendering, and full
 lifecycle/concurrency failure recovery are not established by the suite. See
-[project-review.md](project-review.md) for the uncovered defects and suggested tests.
+[mycodex-audit-report.md](mycodex-audit-report.md) for the consolidated audit record.
 
 ## Validation and help contracts
 
@@ -485,42 +485,10 @@ PYCODE
 
 [cli-guide.md](cli-guide.md) documents defaults, scopes, compatibility aliases, and side
 effects. Human panels use accounts/usage/phone wording; JSON status codes and existing
-command/flag names remain compatible. R01/R06 remain open and no service restart is
-part of source/help updates.
+command/flag names remain compatible. Forced-removal ordering (R01) is resolved,
+and no service restart is part of source/help updates.
 
 ## Published release and host verification
 
-[Changelog](../CHANGELOG.md) records v0.4.2 weekly reset policy and release verification.
-The test runner is committed at `tools/run_tests.py`; deployment observer scripts and
-artifacts remain private runtime files. They are described in
-[redeployment.md](redeployment.md), not exposed as a new CLI lifecycle guarantee.
-
-The corrected host observer completed with `outcome: deployed` on 2026-10-05 after
-normal idle eviction was accepted during monitoring. The relay uses the working-tree
-launcher and keeps its account/pairing. Its supervisor and source matched the successful
-deployment during read-only rechecks. That completed deployment belongs to v0.3.0.
-
-The 2026-10-08 v0.4.0 release was verified with 29 modules and 143 isolated tests;
-the subsequent model-choice audit brings the suite to 145 tests. Its waiting deployment
-job was cancelled before restarting and superseded by v0.4.1. At that release, new invocations
-reported 0.4.1; updating source alone does not reload the running proxy.
-
-<!-- mycodex-deployment-status:start -->
-The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
-and 0 rollback attempts. The independent observer finished its
-two-minute health monitor. Fresh checks confirmed the connected relay, control
-socket and proxy, retained phone identity/pairing and conversation projects, and
-preserved independent Codex processes. The service uses the verified v0.4.1
-working-tree launcher; 145 isolated application tests pass. User model choices
-remain unchanged. Private observer/recovery artifacts are excluded from Git.
-<!-- mycodex-deployment-status:end -->
-
-The v0.4.2 weekly-only reset policy was deployed and enabled on 2026-10-12 at
-08:42:13 UTC. Its observer completed two-minute monitoring without rollback; fresh
-checks retain pairing, projects, proxy health, and independent Codex processes.
-
-The v0.4.3 release deploys decoupled model catalogue routing, live backend model fetching,
-plan-tier account ranking, HTTP 400 `model_not_found` error failover, and support for the
-newly launched **GPT-6.2 model family** (`gpt-6.2-sol`, `gpt-6.2-astra`).
-The full suite now has 167 isolated tests.
-See the [current deployment record](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).
+[Changelog](../CHANGELOG.md) and [mycodex-audit-report.md](mycodex-audit-report.md) record
+the `v0.4.6` release, `codex 0.169.0` alignment fixes, and the 197-test isolated suite.

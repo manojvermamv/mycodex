@@ -7,10 +7,8 @@ followed, and how the result was verified.
 
 The original discovery and host observations below describe the 2026-10-03 baseline;
 they are historical evidence, not a current quota/process snapshot or a complete contract
-for every recovery path. Reviewed again on 2026-10-04: see
-[workflow-audit.md](workflow-audit.md) for completed additions and
-[project-review.md](project-review.md) for reproduced remaining issues. At that 2026-10-04 review, the package reported `0.2.0` while the working tree
-included unreleased changes. See the dated release follow-ups below.
+for every recovery path. For the current `v0.4.6` (`codex 0.169.0`) audit and verified fixes,
+see [mycodex-audit-report.md](mycodex-audit-report.md).
 
 Inspected versions: Codex CLI 0.160.0 (official standalone package, source tag
 `rust-v0.160.0`) and prodex 0.435.1 (the installed binary's SHA-256 matched the release

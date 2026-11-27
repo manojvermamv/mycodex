@@ -425,20 +425,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
             data = bytearray()
             while True:
-                size = int(self.rfile.readline(1024).split(b";")[0].strip() or b"0", 16)
+                line = self.rfile.readline(1024)
+                if not line or not line.endswith(b"\n"):
+                    raise ValueError("truncated chunked request body")
+                raw_size = line.split(b";")[0].strip()
+                if not raw_size:
+                    raise ValueError("missing chunk size")
+                size = int(raw_size, 16)
                 if size < 0 or len(data) + size > MAX_REQUEST_BODY:
                     raise ValueError("request body exceeds maximum allowed size")
                 if size == 0:
                     while self.rfile.readline(1024) not in (b"\r\n", b"\n", b""):
                         pass
                     return bytes(data)
-                data += self.rfile.read(size)
-                self.rfile.readline(16)
+                chunk = self.rfile.read(size)
+                if len(chunk) != size:
+                    raise ValueError("truncated chunked request body")
+                data += chunk
+                if not self.rfile.readline(16).endswith(b"\n"):
+                    raise ValueError("truncated chunked request body")
         length = int(self.headers.get("Content-Length") or 0)
         if length < 0 or length > MAX_REQUEST_BODY:
             raise ValueError("invalid Content-Length")
         if length:
-            return self.rfile.read(length)
+            body = self.rfile.read(length)
+            if len(body) != length:
+                raise ValueError("truncated request body")
+            return body
         return b"" if self.command in ("POST", "PUT", "PATCH") else None
 
     def _headers_for(self, creds: auth.Credentials, keep_turn_state: bool) -> dict[str, str]:

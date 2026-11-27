@@ -90,11 +90,8 @@ intact. Without SOURCE it reuses the saved source, or the active profile if none
 An explicit SOURCE overrides it. Later managed starts refresh the saved source;
 an optional copy failure warns and continues startup with the existing cache.
 
-Starting/stopping/restarting a phone service can interrupt active work. Use the
-[redeployment guide](redeployment.md) to plan a host-side observer before replacing a
-relay that hosts your conversation. It describes a private deployment procedure,
-not a built-in restart command. Forced account removal and early-exit failover remain
-open in the [review](project-review.md#deferred-service-lifecycle-issues).
+Starting/stopping/restarting a phone service can interrupt active work. See
+[mycodex-audit-report.md](mycodex-audit-report.md) for verified fixes and remaining edge cases.
 
 ## Learn an option
 

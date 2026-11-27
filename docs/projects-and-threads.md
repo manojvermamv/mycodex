@@ -3,8 +3,8 @@
 The ChatGPT phone app groups Codex threads by **project**: a named set of folders on the
 host. This guide shows how to start a new thread inside a project, with one mycodex
 command or through the app-server proxy path for your own scripts.
-Reviewed on 2026-10-04. See [project-review.md](project-review.md) for current lookup,
-partial-operation, and concurrency limits.
+See [mycodex-audit-report.md](mycodex-audit-report.md) for current audit status and
+lookup/concurrency notes.
 
 Model selection remains user controlled for each conversation. Sharing the relay's
 model catalogue and switching accounts preserve selected models and reasoning settings;
@@ -248,7 +248,7 @@ Names containing spaces should be quoted. `threads list -n N` requires a positiv
 number; zero, negative, and malformed values are rejected consistently for table/JSON
 output. The 2,000-row listing cap remains for `threads list`, while direct ID/prefix
 lookup queries SQLite directly (R08).
-The remaining deferred service lifecycle issue R06 is saved in [project-review.md](project-review.md).
+The remaining deferred service lifecycle note (R06) is tracked in [mycodex-audit-report.md](mycodex-audit-report.md).
 
 ## v0.3.0 release
 

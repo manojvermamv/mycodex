@@ -12,11 +12,8 @@ from typing import Any
 
 from . import appserver, config, fmt, model_cache, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
 
-ACTIVE = remote.ACTIVE_STATES
-
-
 def _active() -> bool:
-    return remote.service_info().get("ActiveState") in ACTIVE
+    return remote.service_info().get("ActiveState") in remote.ACTIVE_STATES
 
 
 # ----------------------------------------------------------------------------- start
@@ -222,9 +219,9 @@ def status(as_json: bool = False) -> int:
                                                 f"({client.get('platform', '?')} app {client.get('appVersion', '?')}), last seen {seen}"))
         else:
             fields.append(("Paired client", "none yet — run `mycodex remote pair`"))
-    elif service_state in ACTIVE:
+    elif service_state in remote.ACTIVE_STATES:
         fields.append(("Connection", "starting (server not up yet)"))
-    if cfg.get("mode") == "rotating" and service_state in ACTIVE:
+    if cfg.get("mode") == "rotating" and service_state in remote.ACTIVE_STATES:
         port = data["serve_state"].get("proxy_port")
         health = proxy.health(port) if port else None
         if health:

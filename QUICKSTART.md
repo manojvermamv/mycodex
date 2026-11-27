@@ -3,8 +3,8 @@
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
 This guide targets **v0.4.6**, dated 2026-11-26.
-The [changelog](CHANGELOG.md) and [everyday commands](docs/cheatsheet.md) show the updates. See the [whole-project review](docs/project-review.md)
-for remaining defects and [workflow audit](docs/workflow-audit.md) for verified fixes.
+The [changelog](CHANGELOG.md), [everyday commands](docs/cheatsheet.md), and
+[audit report](docs/mycodex-audit-report.md) document recent updates and verified fixes.
 
 ## Understand commands and messages
 
@@ -27,8 +27,8 @@ explanation before the command runs. Foreground phone mode rejects service-only 
 Damaged settings/history are preserved, so correct the reported file or recover it
 from a backup. Never erase account history just to clear a quota cache.
 
-The remaining deferred service issue is [R06](docs/project-review.md#deferred-service-lifecycle-issues)
-(R01 forced-removal ordering is now fixed).
+The remaining deferred service issue is early-exit failover (R06); forced-removal
+ordering (R01) is now fixed and verified in [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md).
 No running service is automatically restarted to load these source changes.
 
 ## 1. Check prerequisites
@@ -314,28 +314,10 @@ rm -rf ~/mycodex
 - [docs/projects-and-threads.md](docs/projects-and-threads.md): project threads, with one command or through the app-server proxy
 - [docs/architecture.md](docs/architecture.md): how accounts, the rotation proxy and the remote service work
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): the investigation behind the design
-- [docs/workflow-audit.md](docs/workflow-audit.md): completed workflow fixes and live validation limits
-- [docs/project-review.md](docs/project-review.md): remaining issues from the fresh whole-project review
+- [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md): consolidated `codex 0.169.0` audit, fixes, and verification record
 
-## v0.4.3 validation and deployment — 2026-11-17
+## v0.4.6 validation — 2026-11-26
 
-For local regression checks, run `python3 -B tools/run_tests.py`; the suite contains
-167 isolated tests. The package has 29 modules. The model catalogue decoupling and
-GPT-6.2 model family support were deployed at **2026-11-17 19:31:05 UTC**, with no
-rollback. Fresh checks preserve the phone identity/pairing, projects, and
-independent Codex processes. The [deployment record](docs/redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17)
-records the observer and recovery checks. The following v0.4.1 record is historical.
-
-<!-- mycodex-deployment-status:start -->
-The v0.4.1 host deployment completed at **2026-10-08 03:19:26 UTC**, with `outcome: deployed`
-and 0 rollback attempts. The independent observer finished its
-two-minute health monitor. Fresh checks confirmed the connected relay, control
-socket and proxy, retained phone identity/pairing and conversation projects, and
-preserved independent Codex processes. The service uses the verified v0.4.1
-working-tree launcher; 145 isolated application tests pass. User model choices
-remain unchanged. Private observer/recovery artifacts are excluded from Git.
-<!-- mycodex-deployment-status:end -->
-
-New CLI commands report v0.4.2. The relay already runs the approved weekly-only policy;
-release metadata and docs do not require another restart. Already-running processes
+Run `PYTHONPATH=src python3 -B tools/run_tests.py` to execute the **197-test** isolated suite.
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 retain their loaded version metadata until a later planned restart.

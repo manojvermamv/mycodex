@@ -711,6 +711,6 @@ mycodex [--profile NAME] remote-control [OPTIONS]
 - `rotation auto-redeem on` spends only at 0% weekly quota with at least one credit, in account order; never for a 5-hour limit alone.
 - Preserve `state/accounts.json`; unreadable state is reported without replacing its retry keys.
 - Starting/stopping/restarting the phone service can interrupt active work.
-- Forced phone-account removal and immediate-exit failover remain open:
-  [see the review](project-review.md).
+- Early-exit failover (R06) remains open; forced phone-account removal now confirms before stopping the service:
+  [see the audit report](mycodex-audit-report.md).
 - Existing running processes keep their loaded source code until a planned restart.

@@ -204,6 +204,14 @@ class RuntimeAndClassifierTest(unittest.TestCase):
         self.assertFalse(auto_resume._has_429_evidence(events_sub, [{"id": 1, "ts": sec, "ts_nanos": 100_000_000, "body": "status=429"}], turn_id="t2"))
         self.assertTrue(auto_resume._has_429_evidence(events_sub, [{"id": 2, "ts": sec, "ts_nanos": 950_000_000, "body": "status=429"}], turn_id="t2"))
 
+        # _current_turn_span truncates at next task_started when inspecting an older turn_id
+        multi_turn = [
+            {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1"}},
+            {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "t1"}},
+            {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t2"}},
+        ]
+        self.assertEqual(len(auto_resume._current_turn_span(multi_turn, turn_id="t1")), 2)
+
     def test_5_execute_due_atomic_claim_and_retry_budget(self):
         cfg = config._merge(config.DEFAULTS, {"auto_resume": {"enabled": True, "max_retries_per_turn": 2, "backoff_seconds": 10}})
         diags = [auto_resume.Diagnosis("th1", "t1", True, auto_resume.QUOTA_5H, "5h limit"),
@@ -427,6 +435,13 @@ class ProtocolAndMaintenanceTest(unittest.TestCase):
             h.headers = bad_hdrs
             if bad_hdrs.get("Transfer-Encoding"):
                 h.rfile = io.BytesIO(f"{proxy.MAX_REQUEST_BODY + 1:x}\r\n".encode())
+            with self.assertRaises(ValueError):
+                h._read_body()
+
+        # Truncated chunked body (EOF before terminating 0\r\n) must raise ValueError
+        h.headers = {"Transfer-Encoding": "chunked"}
+        for truncated in (b"", b"5\r\nhello\r\n", b"5\r\nhel"):
+            h.rfile = io.BytesIO(truncated)
             with self.assertRaises(ValueError):
                 h._read_body()
 
