@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.7 — 2026-11-27
+
+- **Audit Follow-Ups & Edge-Case Hardening**:
+  - **Proxy Body Guard (`proxy.py`)**: Added truncated chunked-EOF and truncated `Content-Length` validation in `_read_body()`, returning HTTP `400` (`bad_request`) instead of forwarding truncated bodies.
+  - **Auto-Resume & Turn Attribution (`auto_resume.py`)**: Truncated `_current_turn_span()` at the next `task_started`/`turn_started` when inspecting an older `turn_id`, and refunded retry `attempts` on connection-level failures while tracking handled threads once per sweep.
+  - **Code & Documentation Consolidation**: Removed trivial internal aliases (`remote_cmd.ACTIVE`, `accounts._names`), consolidated `docs/mycodex-audit-report.md`, and removed superseded `docs/` audit/deployment files (`project-review.md`, `workflow-audit.md`, `redeployment.md`, `mobile-relay-visibility-audit.md`).
+- **Tests**: **197 isolated tests pass**.
+
 ## v0.4.6 — 2026-11-26
 
 - **Codex CLI 0.169.x Alignment & Reliability Hardening (`TESTED_CODEX_SERIES = "0.169."`)**:
