@@ -30,6 +30,10 @@ class AppServerTimeoutError(AppServerError):
     pass
 
 
+class AppServerClosedError(AppServerError):
+    """The connection to the app-server is gone (socket closed, write failed, or close frame)."""
+
+
 class AppServer:
     def __init__(self, socket_path: str | Path, home: Path | None = None, timeout: float = 30):
         self.socket_path = str(socket_path)
@@ -137,7 +141,7 @@ class AppServer:
             raise AppServerTimeoutError("timed out waiting for the app-server") from None
         if chunk is None:
             err = self._stderr
-            raise AppServerError("control socket closed" + (f": {err.decode(errors='replace').strip()}" if err else ""))
+            raise AppServerClosedError("control socket closed" + (f": {err.decode(errors='replace').strip()}" if err else ""))
         self._buf += chunk
 
     def _need(self, size: int, deadline: float) -> bytes:
@@ -152,7 +156,7 @@ class AppServer:
             self.proc.stdin.write(data)
             self.proc.stdin.flush()
         except OSError as exc:
-            raise AppServerError("control socket closed") from exc
+            raise AppServerClosedError("control socket closed") from exc
 
     def _send_frame(self, opcode: int, data: bytes) -> None:
         mask = os.urandom(4)
@@ -180,7 +184,7 @@ class AppServer:
                 size = struct.unpack(">Q", self._need(8, deadline))[0]
             data = self._need(size, deadline)
             if opcode == 0x8:
-                raise AppServerError("app-server closed the connection")
+                raise AppServerClosedError("app-server closed the connection")
             if opcode == 0x9:
                 self._send_frame(0xA, data)
                 continue

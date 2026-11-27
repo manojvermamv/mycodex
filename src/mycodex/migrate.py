@@ -82,7 +82,7 @@ def run(dry_run: bool = False, assume_yes: bool = False, compat_links: bool = Tr
         ui.info("nothing to move")
         return 1 if any(i["action"] == "conflict" for i in items) else 0
 
-    service_active = remote.service_info().get("ActiveState") in ("active", "activating", "reloading")
+    service_active = remote.service_info().get("ActiveState") in remote.ACTIVE_STATES
     service_main = int(remote.service_info().get("MainPID") or 0)
     all_procs = procs.scan(with_sockets=False)
     service_pids = {p.pid for p in procs.descendants(service_main, all_procs)} | {service_main}

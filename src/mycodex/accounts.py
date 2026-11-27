@@ -31,7 +31,7 @@ def remote_roles(cfg: dict[str, Any] | None = None, all_procs: list[procs.Proc] 
     all_procs = all_procs if all_procs is not None else procs.scan(with_sockets=False)
     service_state = remote.service_info().get("ActiveState")
     relay = cfg["remote"].get("profile")
-    if relay and service_state in ("active", "activating", "reloading"):
+    if relay and service_state in remote.ACTIVE_STATES:
         roles[relay] = f"relay ({cfg['remote'].get('mode')})"
     for proc in all_procs:
         if proc.role == "daemon (remote control)" and proc.profile:
@@ -273,7 +273,7 @@ def profile_remove(name: str, assume_yes: bool, keep_home: bool, force: bool) ->
     cfg = config.load()
     profile = _resolve(name, cfg)
     service = remote.service_info().get("ActiveState")
-    needs_service_stop = cfg["remote"].get("profile") == profile.name and service in ("active", "activating", "reloading")
+    needs_service_stop = cfg["remote"].get("profile") == profile.name and service in remote.ACTIVE_STATES
     if needs_service_stop and not force:
         ui.error(f"'{profile.name}' is the relay account of the running remote-control service",
                  ["mycodex remote start --profile <other>", "or pass --force to stop the service"])

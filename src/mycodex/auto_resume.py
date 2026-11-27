@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import appserver, codex, config, paths, profiles, quota, remote_cmd, state, ui
+from . import appserver, codex, config, profiles, quota, remote_cmd, state, ui
 
 QUOTA_5H = "quota_5h"
 APPROVAL_BLOCKED = "approval"
@@ -202,10 +201,7 @@ def _has_429_evidence(events: list[dict[str, Any]], log_rows: list[dict[str, Any
         if span[-1].get("type") == "event_msg" and last_p.get("type") in ("task_complete", "turn_aborted"):
             end_ts = _event_ts(span[-1])
     for row in log_rows:
-        if "turn_id" in row and row["turn_id"] is not None:
-            if turn_id is not None and row["turn_id"] != turn_id:
-                continue
-        elif start_ts is not None and row.get("ts") is not None:
+        if start_ts is not None and row.get("ts") is not None:
             row_ts = float(row["ts"]) + float(row.get("ts_nanos") or 0) / 1_000_000_000.0
             if row_ts < start_ts or (end_ts is not None and row_ts > end_ts):
                 continue
@@ -351,7 +347,7 @@ def diagnose(cfg: dict[str, Any] | None = None, *, all_threads: bool = False,
              quotas: dict[str, quota.Quota] | None = None,
              live_threads: dict[str, dict[str, Any]] | None = None) -> list[Diagnosis]:
     cfg = cfg or config.load()
-    rows = [r for r in codex.threads(limit=None) if not r.get("archived") and not _is_subagent(r)]
+    rows = [r for r in codex.threads(limit=None, light=True) if not r.get("archived") and not _is_subagent(r)]
     if thread_ids is not None:
         wanted = set(thread_ids)
         rows = [r for r in rows if r["id"] in wanted]
@@ -363,8 +359,8 @@ def diagnose(cfg: dict[str, Any] | None = None, *, all_threads: bool = False,
         elif limit <= 0:
             targets = []
         else:
-            start = offset % len(rows) if offset else 0
-            targets = rows[start:start + limit]
+            start = offset % len(rows)
+            targets = [rows[(start + i) % len(rows)] for i in range(min(limit, len(rows)))]
     else:
         targets = rows[:1]
     if not targets:
@@ -533,7 +529,6 @@ def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
             attempts = int(cur.get("attempts") or 0) + 1
             cur["attempts"] = attempts
             cur["scheduled_for"] = now_ts + backoff_s
-            cur["status"] = "failed" if attempts >= max_retries else "pending"
             cur["updated_at"] = now_ts
             claimed.append((tid, dict(cur)))
     if not claimed:
@@ -543,10 +538,12 @@ def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
     if live_res.account:
         state.clear_quota_pause(live_res.account)
 
+    handled: set[str] = set()
     try:
         sock, _ = remote_cmd.server_socket()
         with appserver.AppServer(sock, timeout=60) as server:
             for tid, e in claimed:
+                handled.add(tid)
                 latest_cfg = config.load()
                 if not is_enabled(latest_cfg, tid):
                     state.save_auto_resume(tid, {**e, "status": "cancelled", "updated_at": now_ts})
@@ -578,8 +575,15 @@ def execute_due(cfg: dict[str, Any] | None = None, *, now: float | None = None,
                 })
                 outcomes.append({"thread_id": tid, "action": "resumed", "turn_id": new_turn_id})
     except (SystemExit, OSError, appserver.AppServerError) as exc:
-        for tid, _ in claimed:
-            outcomes.append({"thread_id": tid, "action": "error", "error": str(exc)})
+        # The server was unreachable or dropped: only threads not yet handled get an error, and a
+        # connection failure is not the turn's fault, so it does not spend their retry attempt.
+        unhandled = [tid for tid, _ in claimed if tid not in handled]
+        with state.editing() as data:
+            for tid in unhandled:
+                cur = data.get("auto_resume", {}).get(tid)
+                if cur and cur.get("status") == "pending":
+                    cur["attempts"] = max(0, int(cur.get("attempts") or 0) - 1)
+        outcomes.extend({"thread_id": tid, "action": "error", "error": str(exc)} for tid in unhandled)
     return outcomes
 
 

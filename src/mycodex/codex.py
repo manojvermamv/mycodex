@@ -43,22 +43,20 @@ def package_info() -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
         info["standalone"] = "/packages/standalone/" in str(binary)
-    version_files = [paths.SHARED_CODEX_HOME / "version.json"]
-    if paths.PROFILES_ROOT.is_dir():
-        profile_versions: list[tuple[float, Path]] = []
-        for candidate in paths.PROFILES_ROOT.glob("*/version.json"):
-            try:
-                if candidate.is_file():
-                    profile_versions.append((candidate.stat().st_mtime, candidate))
-            except OSError:
-                continue
-        profile_versions.sort(key=lambda item: item[0], reverse=True)
-        version_files.extend(p for _, p in profile_versions)
+    # The shared home first, then profile homes (the update checker writes there), newest first.
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    version_files = [paths.SHARED_CODEX_HOME / "version.json",
+                     *sorted(paths.PROFILES_ROOT.glob("*/version.json"), key=_mtime, reverse=True)]
     for vf in version_files:
         try:
             info["update_check"] = json.loads(vf.read_text())
             break
-        except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+        except (OSError, ValueError):   # missing/unreadable file, bad UTF-8, bad JSON
             continue
     return info
 
@@ -140,17 +138,18 @@ _THREAD_COLS = (
 )
 
 
-def _thread_columns(conn: sqlite3.Connection) -> str:
+def _thread_columns(conn: sqlite3.Connection, light: bool = False) -> str:
     cols = {row[1] for row in conn.execute("pragma table_info(threads)")}
-    return ", ".join(c for c in _THREAD_COLS if c in cols)
+    return ", ".join(c for c in _THREAD_COLS if c in cols and not (light and c == "first_user_message"))
 
 
-def threads(limit: int | None = 200) -> list[dict[str, Any]]:
+def threads(limit: int | None = 200, light: bool = False) -> list[dict[str, Any]]:
+    """`light=True` skips the bulky first_user_message column (for frequent background scans)."""
     conn = _connect("state")
     if not conn:
         return []
     try:
-        sql = f"select {_thread_columns(conn)} from threads order by updated_at desc"
+        sql = f"select {_thread_columns(conn, light)} from threads order by updated_at desc"
         params: tuple[Any, ...] = ()
         if limit is not None:
             sql += " limit ?"

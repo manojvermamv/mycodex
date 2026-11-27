@@ -17,8 +17,8 @@ from unittest import mock
 from test_core import POSIX, Sandbox, write_auth
 from mycodex import (
     accounts, appserver, auth, auto_resume, codex, config, launch,
-    maintenance, model_cache, paths, procs, profiles, projects, proxy,
-    redemption, remote, remote_cmd, state, threads, ui,
+    maintenance, model_cache, paths, procs, profiles, proxy,
+    redemption, remote, remote_cmd, state,
 )
 
 
@@ -66,7 +66,7 @@ class FoundationAndStorageTest(unittest.TestCase):
              mock.patch.object(auth, "credentials", return_value=auth.Credentials("stale", "acct-p", None)), \
              mock.patch.object(auth, "refresh", return_value=auth.Credentials("fresh", "acct-p", None)), \
              mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            model_cache.fetch_and_write(src)
+            model_cache._fetch_envelope(src)
 
         self.assertIn("client_version=0.170.1", seen[0][0])
         self.assertEqual(seen[0][1].get("chatgpt-account-id"), "acct-p")
@@ -206,17 +206,59 @@ class RuntimeAndClassifierTest(unittest.TestCase):
 
     def test_5_execute_due_atomic_claim_and_retry_budget(self):
         cfg = config._merge(config.DEFAULTS, {"auto_resume": {"enabled": True, "max_retries_per_turn": 2, "backoff_seconds": 10}})
-        diag = auto_resume.Diagnosis("th1", "t1", True, auto_resume.QUOTA_5H, "5h limit")
+        diags = [auto_resume.Diagnosis("th1", "t1", True, auto_resume.QUOTA_5H, "5h limit"),
+                 auto_resume.Diagnosis("th2", "t2", True, auto_resume.QUOTA_5H, "5h limit")]
         res = auto_resume.WindowResolution(True, 100, "acct", False)
-        with mock.patch.object(auto_resume, "diagnose", return_value=[diag]), \
-             mock.patch.object(auto_resume, "resolve_window", return_value=res), \
-             mock.patch.object(auto_resume, "remote_cmd") as rc:
+        with mock.patch.object(auto_resume, "diagnose", return_value=diags[:1]),              mock.patch.object(auto_resume, "resolve_window", return_value=res),              mock.patch.object(auto_resume, "remote_cmd") as rc:
+            # Connection failure is not the turn's fault: it never spends the retry budget.
             rc.server_socket.side_effect = SystemExit("no sock")
-            auto_resume.execute_due(cfg, now=100)
-            auto_resume.execute_due(cfg, now=110)
+            for now in (100, 110, 120):
+                out = auto_resume.execute_due(cfg, now=now)
+                self.assertEqual([o["action"] for o in out], ["error"])
+            entry = state.auto_resume_entries()["th1"]
+            self.assertEqual((entry["status"], entry["attempts"]), ("pending", 0))
+
+        # A per-thread failure spends one attempt; after the budget the entry becomes failed.
+        failing = [{"id": "th1", "turns": [{"id": "t1", "status": "failed"}], "status": {"type": "idle"}}]
+        with mock.patch.object(auto_resume, "diagnose", return_value=diags[:1]),              mock.patch.object(auto_resume, "resolve_window", return_value=res),              mock.patch.object(config, "load", return_value=cfg),              mock.patch.object(auto_resume.appserver, "AppServer"),              mock.patch.object(auto_resume.appserver, "read_thread_with_turns",
+                               side_effect=appserver.AppServerError("boom")),              mock.patch.object(auto_resume, "remote_cmd") as rc:
+            rc.server_socket.return_value = ("sock", None)
+            self.assertEqual(auto_resume.execute_due(cfg, now=200)[0]["action"], "error")
+            self.assertEqual(auto_resume.execute_due(cfg, now=210)[0]["action"], "error")
+            self.assertEqual(state.auto_resume_entries()["th1"]["attempts"], 2)
+            self.assertEqual(auto_resume.execute_due(cfg, now=220)[0]["action"], "failed")
             self.assertEqual(state.auto_resume_entries()["th1"]["status"], "failed")
-            auto_resume.execute_due(cfg, now=111)
-            self.assertEqual(rc.server_socket.call_count, 2)
+
+    def test_5_execute_due_reports_each_thread_once(self):
+        cfg = config._merge(config.DEFAULTS, {"auto_resume": {"enabled": True, "max_retries_per_turn": 3}})
+        diags = [auto_resume.Diagnosis("th1", "t1", True, auto_resume.QUOTA_5H, "5h limit"),
+                 auto_resume.Diagnosis("th2", "t2", True, auto_resume.QUOTA_5H, "5h limit")]
+        res = auto_resume.WindowResolution(True, 100, "acct", False)
+        ok = {"id": "th1", "turns": [{"id": "t1", "status": "failed"}], "status": {"type": "idle"}}
+        with mock.patch.object(auto_resume, "diagnose", return_value=diags),              mock.patch.object(auto_resume, "resolve_window", return_value=res),              mock.patch.object(config, "load", return_value=cfg),              mock.patch.object(auto_resume.appserver, "AppServer"),              mock.patch.object(auto_resume.appserver, "read_thread_with_turns",
+                               side_effect=[ok, appserver.AppServerClosedError("control socket closed")]),              mock.patch.object(auto_resume, "remote_cmd") as rc:
+            rc.server_socket.return_value = ("sock", None)
+            rc.dispatch_turn.return_value = "new-turn"
+            out = auto_resume.execute_due(cfg, now=100)
+        self.assertEqual([(o["thread_id"], o["action"]) for o in out], [("th1", "resumed"), ("th2", "error")])
+
+    def test_diagnose_window_wraps_and_light_threads_skip_first_message(self):
+        rows = [{"id": f"t{i}", "updated_at": 10 - i, "archived": 0, "rollout_path": None, "source": "cli"}
+                for i in range(5)]
+        seen = []
+        with mock.patch.object(codex, "threads", side_effect=lambda **kw: (seen.append(kw), rows)[1]),              mock.patch.object(codex, "recent_thread_logs", return_value=[]),              mock.patch.object(auto_resume, "_capable_pool_all_limited", return_value=False),              mock.patch.object(auto_resume, "classify") as cls:
+            cls.side_effect = lambda row, *a, **k: auto_resume.Diagnosis(row["id"], None, True, auto_resume.OTHER, "x")
+            out = auto_resume.diagnose({}, all_threads=False, limit=3, offset=0, thread_ids=[r["id"] for r in rows],
+                                       live_threads={})
+            self.assertEqual([d.thread_id for d in out], ["t0", "t1", "t2"])
+            out = auto_resume.diagnose({}, limit=3, offset=4, thread_ids=[r["id"] for r in rows], live_threads={})
+            self.assertEqual([d.thread_id for d in out], ["t4", "t0", "t1"])
+        self.assertTrue(all(kw.get("light") for kw in seen))
+        with sqlite3.connect(self.box.shared / "state_5.sqlite") as conn:
+            conn.execute("create table threads (id text primary key, updated_at integer, first_user_message text)")
+            conn.execute("insert into threads values ('a', 1, 'hello')")
+        self.assertNotIn("first_user_message", codex.threads(light=True)[0])
+        self.assertIn("first_user_message", codex.threads()[0])
 
     def test_6_redemption_clears_key_before_snapshot_error_and_preserves_pause(self):
         prof = profiles.Profile("p1", self.box.home("p1"))
@@ -278,7 +320,7 @@ class ProtocolAndMaintenanceTest(unittest.TestCase):
                     ["-i", "a.png", "b.png", "--help"], ["app-server", "--print-startup-config"]):
             self.assertFalse(launch.wants_proxy(off), off)
         for on in (["agents"], ["-C", "/w", "agents"], ["--", "archive"],
-                   ["app-server", "--startup-client-info", '{"name":"local"}']):
+                   ["app-server", "--startup-client-info", '{"name":"local"}'], ["--print-startup-config"]):
             self.assertTrue(launch.wants_proxy(on), on)
 
     def test_12_websocket_pong_and_disconnect_handling(self):
@@ -291,7 +333,10 @@ class ProtocolAndMaintenanceTest(unittest.TestCase):
         self.assertEqual(server._receive(time.time() + 5), {"id": 1, "result": {}})
         self.assertEqual(sent[0][0], 0x8A)
 
-        server._receive = mock.Mock(side_effect=appserver.AppServerError("control socket closed"))
+        server._buf = bytes([0x88, 0])
+        with self.assertRaises(appserver.AppServerClosedError):
+            server._receive(time.time() + 5)
+        server._receive = mock.Mock(side_effect=appserver.AppServerClosedError("control socket closed"))
         with self.assertRaises(appserver.AppServerError):
             server.wait_for("turn/completed", timeout=5)
 

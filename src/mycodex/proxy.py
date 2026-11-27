@@ -356,6 +356,15 @@ class _Reader(threading.Thread):
             self.items.put(None)
 
 
+PAID_PLANS = ("plus", "pro", "team", "enterprise")
+
+
+def _is_paid_plan(profile: Profile, cached: Any) -> bool:
+    """Paid accounts (known from the login or the last quota check) can serve the full model list."""
+    plan = profiles.identity(profile.home).get("plan") or (cached.plan if cached else None)
+    return plan in PAID_PLANS
+
+
 @dataclass
 class Failure:
     verdict: Verdict
@@ -464,10 +473,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             best_profile = next((p for p in plan if p.name == models_source_name), None) if models_source_name else None
             if not best_profile:
                 for p in plan:
-                    id_plan = profiles.identity(p.home).get("plan")
-                    q = quota.cached(p.name)
-                    q_plan = q.plan if q else None
-                    if (id_plan or q_plan) in ("plus", "pro", "team", "enterprise"):
+                    if _is_paid_plan(p, quota.cached(p.name)):
                         best_profile = p
                         break
             if best_profile:
@@ -838,9 +844,7 @@ class RotationProxy:
             else:
                 headroom = cached.remaining if cached and cached.remaining is not None else 50.0
             order_rank = order.index(p.name) if p.name in order else len(order)
-            id_plan = profiles.identity(p.home).get("plan")
-            q_plan = cached.plan if cached else None
-            plan_tier = 0 if (id_plan or q_plan) in ("plus", "pro", "team", "enterprise") else 1
+            plan_tier = 0 if _is_paid_plan(p, cached) else 1
             affinity_rank = 0 if p.name in (session_owner, current) else 1
             return (order_rank, plan_tier, -headroom, affinity_rank, p.name)
 

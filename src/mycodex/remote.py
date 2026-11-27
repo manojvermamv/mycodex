@@ -28,6 +28,7 @@ from typing import Any
 from . import appserver, codex, config, launch, model_cache, paths, procs, profiles, quota, ui
 
 EXIT_FAILOVER = 75
+ACTIVE_STATES = ("active", "activating", "reloading")   # systemd ActiveState values meaning "running or about to"
 
 
 # ----------------------------------------------------------------------------- systemd

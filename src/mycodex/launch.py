@@ -22,7 +22,7 @@ NO_MODEL_COMMANDS = frozenset({
     "help", "update", "cloud", "plugin", "plugins", "doctor",
     "archive", "delete", "unarchive", "queue", "migrate-rollouts", "migrate-nfs-db", "exec-server",
 })
-INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help", "--print-startup-config"})
+INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help"})
 _VALUE_FLAGS = frozenset({
     "-c", "--config", "-m", "--model", "-p", "--profile", "-s", "--sandbox",
     "-a", "--ask-for-approval", "-C", "--cd", "--add-dir", "--local-provider",
@@ -74,7 +74,8 @@ def wants_proxy(codex_args: list[str]) -> bool:
     if cmd in NO_MODEL_COMMANDS:
         return False
     if cmd == "app-server":
-        return not any(p in _APP_SERVER_NO_MODEL for p in positionals[1:])
+        # `--print-startup-config` is an app-server-only flag that just validates config and exits.
+        return "--print-startup-config" not in codex_args and not any(p in _APP_SERVER_NO_MODEL for p in positionals[1:])
     if cmd == "remote-control":
         return not any(p in _REMOTE_CONTROL_NO_MODEL for p in positionals[1:])
     return True

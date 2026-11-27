@@ -33,15 +33,15 @@ SHARED_DIRS = (
     "thread-writer-locks", ".tmp/plugins", ".tmp/marketplaces",
 )
 LOCK_DIRS = {"thread-writer-locks"}
-LOCK_FILES = {".tmp/rollout-maintenance.lock", ".sqlite-maintenance.lock",
-              ".tmp/plugins.sync.lock", "session_index.jsonl.lock"}
+LOCK_FILES = (".tmp/rollout-maintenance.lock", ".sqlite-maintenance.lock",
+              ".tmp/plugins.sync.lock", "session_index.jsonl.lock")
 SHARED_FILES = (
     "history.jsonl", "session_index.jsonl",
     "config.toml", "managed_config.toml", "environments.toml",
     "AGENTS.md", "AGENTS.override.md", ".credentials.json",
     ".tmp/plugins.sha", ".tmp/known_marketplaces.json",
     ".tmp/app-server-remote-plugin-sync-v1",
-    *sorted(LOCK_FILES),
+    *LOCK_FILES,
 )
 SQLITE_RE = re.compile(r"^[a-z][a-z0-9_]*_\d+\.sqlite$")
 PROFILE_CONFIG_SUFFIX = ".config.toml"
@@ -132,7 +132,7 @@ def shared_entries(shared: Path | None = None) -> list[tuple[str, bool]]:
 
 @dataclass
 class HomeReport:
-    linked: list[str] = field(default_factory=list)     # links created or corrected
+    linked: list[str] = field(default_factory=list)     # links created, corrected or removed
     adopted: list[str] = field(default_factory=list)    # per-home data folded into ~/.codex
     private: list[str] = field(default_factory=list)    # real entries that stay private (problems)
 

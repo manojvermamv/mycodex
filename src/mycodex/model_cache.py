@@ -25,10 +25,6 @@ def _invalid_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON constant {value}")
 
 
-def _parse_json(data: bytes) -> Any:
-    return json.loads(data.decode("utf-8"), parse_constant=_invalid_constant)
-
-
 def _is_envelope(obj: Any) -> bool:
     if not isinstance(obj, dict):
         return False
@@ -53,7 +49,8 @@ def _is_envelope(obj: Any) -> bool:
     return isinstance(obj.get("models"), list)
 
 
-def _atomic_write(directory: Path, target: Path, data: bytes) -> None:
+def _atomic_write(directory: Path, data: bytes) -> None:
+    """Replace `<directory>/models_cache.json` atomically with mode 0600."""
     temporary: Path | None = None
     try:
         fd, temporary_name = tempfile.mkstemp(prefix=f".{CACHE_FILE}.", dir=directory)
@@ -63,7 +60,7 @@ def _atomic_write(directory: Path, target: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, target)
+        os.replace(temporary, directory / CACHE_FILE)
         temporary = None
     except OSError as exc:
         raise ModelCacheError("could not replace the relay model cache") from exc
@@ -84,15 +81,13 @@ def _read_cache(source: Path) -> tuple[bytes, Any]:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
                 raise OSError("model cache is not a regular file")
             data = handle.read()
-        parsed = _parse_json(data)
+        parsed = json.loads(data.decode("utf-8"), parse_constant=_invalid_constant)
     except (OSError, RecursionError, UnicodeDecodeError, ValueError) as exc:
         raise ModelCacheError("the selected profile has no readable valid model cache") from exc
     return data, parsed
 
 
 def _read_existing_dict(path: Path) -> dict[str, Any] | None:
-    if path.is_symlink() or not path.is_file():
-        return None
     try:
         _, parsed = _read_cache(path)
     except ModelCacheError:
@@ -155,7 +150,7 @@ def _fetch_envelope(profile: Profile, timeout: int = 10) -> tuple[bytes, dict[st
         raise ModelCacheError("failed to fetch model catalogue from backend") from exc
 
     try:
-        parsed = _parse_json(raw)
+        parsed = json.loads(raw.decode("utf-8"), parse_constant=_invalid_constant)
     except (RecursionError, UnicodeDecodeError, ValueError) as exc:
         raise ModelCacheError("backend returned invalid model catalogue JSON") from exc
     if not isinstance(parsed, dict) or not isinstance(parsed.get("models"), list):
@@ -172,14 +167,8 @@ def _fetch_envelope(profile: Profile, timeout: int = 10) -> tuple[bytes, dict[st
         "models": parsed["models"],
     }
     encoded = json.dumps(envelope, separators=(",", ":")).encode("utf-8")
-    _atomic_write(home, target, encoded)
+    _atomic_write(home, encoded)
     return encoded, envelope
-
-
-def fetch_and_write(profile: Profile, timeout: int = 10) -> bytes:
-    """Fetch the latest model catalogue from backend and save a ModelsCacheEntry envelope."""
-    encoded, _ = _fetch_envelope(profile, timeout=timeout)
-    return encoded
 
 
 def sync(source: Profile, target: Profile, refresh: bool = False) -> bool:
@@ -215,5 +204,5 @@ def sync(source: Profile, target: Profile, refresh: bool = False) -> bool:
             updated["identity"] = target_id
             snapshot = json.dumps(updated, separators=(",", ":")).encode("utf-8")
 
-    _atomic_write(directory, destination, snapshot)
+    _atomic_write(directory, snapshot)
     return True

@@ -12,7 +12,7 @@ from typing import Any
 
 from . import appserver, config, fmt, model_cache, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
 
-ACTIVE = ("active", "activating", "reloading")
+ACTIVE = remote.ACTIVE_STATES
 
 
 def _active() -> bool:
@@ -290,11 +290,11 @@ def pair(wait: bool = True) -> int:
             box.update("waiting", "enter the code in the ChatGPT app (Ctrl-C to stop waiting)")
             try:
                 claimed = server.result("remoteControl/pairing/status", {"manualPairingCode": code}).get("claimed")
-            except appserver.AppServerError as exc:
-                if "closed" in str(exc).lower() or (server.proc is not None and server.proc.poll() is not None):
-                    box.clear()
-                    ui.error(f"remote-control server disconnected: {exc}")
-                    return 1
+            except appserver.AppServerClosedError as exc:
+                box.clear()
+                ui.error(f"remote-control server disconnected: {exc}")
+                return 1
+            except appserver.AppServerError:
                 claimed = False
             if claimed:
                 box.clear()
