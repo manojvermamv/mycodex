@@ -272,6 +272,8 @@ def _remote_start_parser(command: str) -> Parser:
     fo.add_argument("--failover", dest="failover", action="store_const", const=True)
     fo.add_argument("--no-failover", dest="failover", action="store_const", const=False)
     p.add_argument("--cwd")
+    p.add_argument("--sandbox")
+    p.add_argument("--approval")
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-wait", action="store_true")
     return p
@@ -284,10 +286,12 @@ def cmd_remote_control(args: list[str], g: Globals) -> int:
     ns = p.parse(args)
     profile = ns.profile or g.profile
     if ns.foreground:
-        if ns.cwd is not None or ns.failover is not None or ns.force or ns.no_wait:
+        if (ns.cwd is not None or ns.failover is not None or ns.force or ns.no_wait
+                or ns.sandbox is not None or ns.approval is not None):
             p.error("With --foreground, use only --profile, --rotating, or --pinned. Remove --foreground to use service options.")
         return remote_cmd.foreground(profile, ns.mode)
-    return remote_cmd.start(profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait)
+    return remote_cmd.start(profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait,
+                            sandbox=ns.sandbox, approval=ns.approval)
 
 
 def cmd_remote(args: list[str], g: Globals) -> int:
@@ -300,7 +304,8 @@ def cmd_remote(args: list[str], g: Globals) -> int:
         return 0
     if sub == "start":
         ns = _remote_start_parser("remote start").parse(rest)
-        return remote_cmd.start(ns.profile or g.profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait)
+        return remote_cmd.start(ns.profile or g.profile, ns.mode, ns.cwd, ns.failover, ns.force, not ns.no_wait,
+                                sandbox=ns.sandbox, approval=ns.approval)
     if sub == "models":
         action = rest[0] if rest and not rest[0].startswith("-") else ""
         if action == "share":
@@ -319,6 +324,9 @@ def cmd_remote(args: list[str], g: Globals) -> int:
     if sub == "status":
         p.add_argument("--json", action="store_true")
         return remote_cmd.status(p.parse(rest).json)
+    if sub == "doctor":
+        p.add_argument("--json", action="store_true")
+        return remote_cmd.remote_doctor(p.parse(rest).json)
     if sub == "pair":
         p.add_argument("--no-wait", action="store_true")
         return remote_cmd.pair(not p.parse(rest).no_wait)
@@ -336,9 +344,15 @@ def cmd_remote(args: list[str], g: Globals) -> int:
         p.add_argument("--name")
         p.add_argument("--message")
         p.add_argument("--project")
+        p.add_argument("--sandbox")
+        p.add_argument("--approval")
+        p.add_argument("--trust", action="store_true")
+        p.add_argument("--no-restart", action="store_true")
         p.add_argument("--no-wait", action="store_true")
         ns = p.parse(rest)
-        return remote_cmd.feed_or_seed(ns.dir, ns.name, ns.message or ns.text_arg, ns.project, not ns.no_wait)
+        return remote_cmd.feed_or_seed(ns.dir, ns.name, ns.message or ns.text_arg, ns.project, not ns.no_wait,
+                                        sandbox=ns.sandbox, approval=ns.approval, trust=ns.trust,
+                                        restart=not ns.no_restart)
     if sub == "socket":
         p.parse(rest)
         return remote_cmd.socket_path()
@@ -389,9 +403,11 @@ def cmd_projects(args: list[str], dry_run: bool = False) -> int:
     if sub == "add":
         p.add_argument("directory")
         p.add_argument("--name")
+        p.add_argument("--trust", action="store_true")
+        p.add_argument("--no-restart", action="store_true")
         p.add_argument("--json", action="store_true")
         ns = p.parse(rest)
-        return projects.add(ns.directory, ns.name, ns.json)
+        return projects.add(ns.directory, ns.name, ns.json, restart=not ns.no_restart, trust=ns.trust)
     if sub == "clean":
         p.add_argument("project")
         p.add_argument("--dry-run", action="store_true")

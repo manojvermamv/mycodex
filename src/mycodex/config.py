@@ -17,6 +17,8 @@ from typing import Any, Iterator
 from . import paths, validation as check
 
 REMOTE_MODES = ("rotating", "pinned")
+SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
+APPROVAL_POLICIES = ("untrusted", "on-request", "never")
 
 DEFAULTS: dict[str, Any] = {
     "version": 2,
@@ -33,6 +35,8 @@ DEFAULTS: dict[str, Any] = {
         "profile": None,          # relay account the phone pairs with
         "models_source": None,    # Plus profile whose model cache is copied to the relay profile
         "cwd": None,              # working directory for the service (default: home)
+        "sandbox": None,          # optional Codex sandbox_mode override for remote-control / seed
+        "approval": None,         # optional Codex approval_policy override for remote-control / seed
         "failover": True,         # auth invalidation in either mode; quota exhaustion only in pinned mode
         "failover_check_seconds": 300,
     },
@@ -83,8 +87,12 @@ def load(path: Path = paths.CONFIG_FILE) -> dict[str, Any]:
         remote = check.object_value(data.get("remote"), "phone settings")
         if remote.get("mode") not in REMOTE_MODES:
             raise check.InvalidData("remote.mode must be rotating (share accounts) or pinned (one account)")
-        for key in ("profile", "models_source", "cwd"):
+        for key in ("profile", "models_source", "cwd", "sandbox", "approval"):
             check.text_value(remote.get(key), "remote." + key, optional=True)
+        if remote.get("sandbox") is not None and remote.get("sandbox") not in SANDBOX_MODES:
+            raise check.InvalidData(f"remote.sandbox must be one of: {', '.join(SANDBOX_MODES)}")
+        if remote.get("approval") is not None and remote.get("approval") not in APPROVAL_POLICIES:
+            raise check.InvalidData(f"remote.approval must be one of: {', '.join(APPROVAL_POLICIES)}")
         check.boolean(remote.get("failover"), "remote.failover")
         check.number(remote.get("failover_check_seconds"), "remote.failover_check_seconds", minimum=1, integer=True)
         auto_resume = check.object_value(data.get("auto_resume"), "auto_resume settings")

@@ -7,7 +7,8 @@ followed, and how the result was verified.
 
 The original discovery and host observations below describe the 2026-10-03 baseline;
 they are historical evidence, not a current quota/process snapshot or a complete contract
-for every recovery path. For the current `v0.4.6` (`codex 0.169.0`) audit and verified fixes,
+for every recovery path. For the current audit (`codex 0.169.0`) and verified fixes,
+see [mycodex-audit-report.md](mycodex-audit-report.md).
 see [mycodex-audit-report.md](mycodex-audit-report.md).
 
 Inspected versions: Codex CLI 0.160.0 (official standalone package, source tag
@@ -186,18 +187,18 @@ live event. It did reproduce the immediate-child-exit gap in periodic relay fail
    loses retry identity. Shared-file adoption/maintenance are not fully atomic across
    concurrent Codex writers.
 
-The original discovery remains useful, but the current [whole-project review](project-review.md)
+The original discovery remains useful, but the current [audit report](mycodex-audit-report.md)
 takes precedence for open defects, claim limits, and implementation priorities.
 
 ## Later follow-up: validation and easier commands — 2026-10-05
 
-The historical 81-test snapshot above is superseded by 114 passing isolated tests.
+The historical 81-test snapshot above is superseded by the current isolated suite.
 R07 quota/auth/config validation is fixed; missing permission is unknown, failed checks
 invalidate stale readiness, malformed refresh does not overwrite login, and corrupt
 durable history is preserved. R04 argument routing and R05 foreground flag handling
 are corrected. Account/usage/phone wording and complete subcommand help are shared
-with the new [command guide](cli-guide.md). R01/R06 remain open and documented in the
-[current review](project-review.md#deferred-service-lifecycle-issues). Running instances
+with the new [command guide](cli-guide.md). R01/R06 status is tracked in the
+[audit report](mycodex-audit-report.md). Running instances
 were left in place; no real reset credit or model turn was used for these tests.
 
 ## v0.3.0 publication — 2026-10-05
@@ -209,8 +210,8 @@ reproduced 114 passing isolated regressions. The [public cheat sheet](cheatsheet
 account/folder examples. Personal host notes and temporary recovery scripts stay private.
 
 The corrected guarded deployment completed with the updated source and retained pairing;
-it passed monitoring and later read-only rechecks. The [redeployment guide](redeployment.md)
-records the first observer's false idle-eviction failure and its correction. Release
+it passed monitoring and later read-only rechecks. See [CHANGELOG.md](../CHANGELOG.md) for release history
+and verification notes. Release
 publication changes metadata/docs and does not restart active sessions. R01/R06 remain open.
 
 ## v0.4.0 follow-up — 2026-10-08
@@ -253,7 +254,7 @@ account lock and saved authoritative balances protect credit use. A successful r
 keeps the request on the recovered account, including with low five-hour headroom.
 The 166-test suite is isolated from real accounts and services. The guarded host deployment
 completed at 08:42:13 UTC without rollback and preserved pairing, projects, and independent
-Codex processes; see [the deployment record](redeployment.md#weekly-only-reset-deployment--2026-10-12).
+Codex processes; see [CHANGELOG.md](../CHANGELOG.md) for the v0.4.2 deployment notes.
 Publication updates version/docs while the relay remains online with this deployed behavior.
 
 ## v0.4.3 model catalogue decoupling & GPT-6.2 support — 2026-11-17
@@ -267,4 +268,4 @@ model metadata directly from OpenAI on demand via `fetch_and_write` when missing
 ranking prioritizes Plus accounts over Free accounts, and backend HTTP 400 `model_not_found`
 errors are classified as rotatable so unsupported model turns fail over to an eligible account.
 The **GPT-6.2 model family** (`gpt-6.2-sol`, `gpt-6.2-astra`) was verified live on the backend
-and made available to clients. Isolated tests expanded to 167. See [redeployment.md](redeployment.md#model-catalogue-decoupling-and-gpt-62-deployment--2026-11-17).
+and made available to clients. Isolated tests expanded to 167. See [CHANGELOG.md](../CHANGELOG.md) for v0.4.3 deployment notes.

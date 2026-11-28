@@ -2,7 +2,7 @@
 
 This path installs mycodex, logs in your ChatGPT accounts, launches the official Codex
 TUI with automatic rotation, and connects the ChatGPT phone app through remote control.
-This guide targets **v0.4.6**, dated 2026-11-26.
+This guide targets **v0.4.8**, dated 2026-11-28.
 The [changelog](CHANGELOG.md), [everyday commands](docs/cheatsheet.md), and
 [audit report](docs/mycodex-audit-report.md) document recent updates and verified fixes.
 
@@ -211,7 +211,7 @@ accounts also preserves the model and reasoning settings you selected.
 Register a project without a model turn, then link an existing thread:
 
 ```bash
-mycodex projects add ~/your-project --name "My Project"
+mycodex projects add ~/your-project --name "My Project" [--trust] [--no-restart]
 mycodex projects
 mycodex threads link <thread-id> --project ~/your-project
 ```
@@ -222,10 +222,14 @@ To start a new thread inside a project (the project is created if it does not ex
 mycodex remote seed ~/your-project --name "First task" --message "Describe the first task here"
 ```
 
-The wrapper's terminal launch does not assign a project. Linking updates metadata and
-resumes the existing thread on the server without a turn or restart. Correct provider
-tags and loaded state help establish eligibility; phone rendering still depends on the
-client. See [docs/projects-and-threads.md](docs/projects-and-threads.md).
+When the remote service is running, creating a new project (`projects add`) or completing
+`remote seed` automatically restarts the service so the phone refreshes immediately
+(`--no-restart` opts out). Use `--sandbox` / `--approval` if container user namespaces block
+`bwrap`, and `--trust` to mark the folder trusted in `~/.codex/config.toml`. The wrapper's
+terminal launch does not assign a project. Linking updates metadata and resumes the
+existing thread on the server without a turn or restart. Correct provider tags and loaded
+state help establish eligibility; phone rendering still depends on the client. See
+[docs/projects-and-threads.md](docs/projects-and-threads.md).
 
 Prefer one account with no rotation for the phone?
 
@@ -236,13 +240,14 @@ mycodex --profile work remote-control --pinned --no-failover
 The phone and your terminal sessions share one thread list. The service restarts on its
 own after child exits, subject to systemd restart limits, and keeps running after you
 close SSH with lingering enabled. Foreground debugging lacks service failover and
-rejects cwd/failover/force/no-wait flags instead of ignoring them.
+rejects cwd/sandbox/approval/failover/force/no-wait flags instead of ignoring them.
 
 ## 8. Everyday checks
 
 ```bash
 mycodex status            # accounts, rotation, phone link, sessions, versions
 mycodex remote status     # connection, relay account, paired phones, proxy
+mycodex remote doctor     # relay, mobile project/thread visibility, bwrap, trust, and logs
 mycodex threads           # recent threads and their provider tag
 mycodex processes         # every codex / mycodex process and its account
 mycodex remote logs -f    # follow the remote-control service
@@ -253,6 +258,7 @@ mycodex remote logs -f    # follow the remote-control service
 ```bash
 mycodex doctor
 mycodex doctor --fix
+mycodex remote doctor
 ```
 
 Common fixes:
@@ -265,7 +271,8 @@ Common fixes:
   NAME` clears the pause manually.
 - a thread with another provider: `mycodex threads adopt ID` creates an `openai` copy
 - an existing thread missing its project/loading: `mycodex threads link ID --project DIR`
-- phone shows no project: `mycodex projects add ~/your-project`, then link or seed
+- phone shows no project / `Loading projects...` spins: `mycodex remote doctor`, `mycodex projects add ~/your-project`, or `mycodex remote restart`
+- mobile shell turns fail (`bwrap` missing/restricted): pass `--sandbox danger-full-access --approval never` to `remote start` or `remote seed`
 - stale legacy rollout paths: `mycodex doctor --fix-rollout-paths` (backed up, no usage query)
 - another remote-control server is running: stop it, or `mycodex remote-control --force`
 - remote service restarting: `mycodex remote logs`
@@ -316,8 +323,9 @@ rm -rf ~/mycodex
 - [docs/discovery-and-design.md](docs/discovery-and-design.md): the investigation behind the design
 - [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md): consolidated `codex 0.169.0` audit, fixes, and verification record
 
-## v0.4.6 validation — 2026-11-26
+## v0.4.8 validation — 2026-11-28
 
-Run `PYTHONPATH=src python3 -B tools/run_tests.py` to execute the **197-test** isolated suite.
+Run `PYTHONPATH=src python3 -B tools/run_tests.py` to execute the isolated test suite.
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
-retain their loaded version metadata until a later planned restart.
+Existing running processes retain their loaded version metadata until a planned restart
+(which `projects add` and `remote seed` perform automatically when active unless `--no-restart` is passed).

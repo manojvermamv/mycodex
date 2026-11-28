@@ -210,6 +210,7 @@ mycodex rotation disable personal          # never switch to it (`rotation enabl
 
 # ── Phone (remote control) ──────────────────────────────────────────────────
 mycodex remote status                      # connected? paired phone? proxy and rotation pool
+mycodex remote doctor                      # diagnose relay, mobile visibility, bwrap, trust, and logs
 mycodex remote logs -f                     # follow the service log (Ctrl-C to quit)
 mycodex remote restart                     # restart the phone link with the same settings
 mycodex --profile work remote-control      # (re)start it as work, rotating mode
@@ -240,6 +241,7 @@ mycodex profile alias work_example.com phone   # then use --profile phone
 # ── Health ──────────────────────────────────────────────────────────────────
 mycodex status                             # one-screen overview of everything
 mycodex doctor                             # full check; `mycodex doctor --fix` repairs what is safe
+mycodex remote doctor                      # focused mobile-relay, project, bwrap, trust & log checks
 mycodex processes                          # every codex / mycodex process and its account
 mycodex --version                          # mycodex and codex versions
 mycodex help remote                        # options of any command
@@ -380,20 +382,21 @@ mycodex remote-control --cwd ~/project           # default working directory for
 mycodex remote-control --foreground              # run in this terminal instead of the service
 
 mycodex remote status [--json]       # mode, relay, connection, host, paired phones, proxy
+mycodex remote doctor [--json]       # diagnose relay, mobile visibility, bwrap, trust, and logs
 mycodex remote models share [SOURCE] # copy a Plus catalogue now; no service restart or re-pairing
 mycodex remote pair [--no-wait]      # short-lived pairing code for the ChatGPT app
 mycodex remote clients [--revoke ID] # paired devices
 mycodex remote logs [-f] [-n N]      # service logs
-mycodex remote seed [DIR] [--name N] [--message T] [--project P] [--no-wait]
-                                     # new thread inside DIR's project (created if missing)
+mycodex remote seed [DIR] [--name N] [--message T] [--project P] [--sandbox M] [--approval A] [--trust] [--no-restart] [--no-wait]
+                                     # new thread inside DIR's project (auto-restarts active service)
 mycodex remote socket                # the server's control socket, for app-server proxy scripts
 mycodex remote restart
 mycodex remote stop                  # stop and disable the service (phone link offline)
 ```
 
-`mycodex remote start` takes the same options as `remote-control`.
-Foreground mode currently honors profile/mode only; `--cwd`, failover, force, and
-no-wait are accepted but not applied there. Service start can stop conflicting official
+`mycodex remote start` takes the same options as `remote-control` (including `--sandbox MODE` and `--approval POLICY`).
+Foreground mode currently honors profile/mode only; `--cwd`, `--sandbox`, `--approval`, failover, force, and
+no-wait are accepted only without `--foreground`. Service start can stop conflicting official
 remote daemons and restart the existing service when settings change. It is a lifecycle
 operation, not a status check.
 
@@ -433,7 +436,7 @@ mycodex threads [--all] [-n N] [--json]          # recent threads with their pro
 mycodex threads adopt ID [--name N] [--archive-original]
 mycodex threads link ID [--project DIR_OR_NAME_OR_ID]
 mycodex projects [list] [--json]
-mycodex projects add DIR [--name NAME] [--json]
+mycodex projects add DIR [--name NAME] [--trust] [--no-restart] [--json]
 mycodex projects clean NAME_OR_DIR_OR_ID [--dry-run] [--yes]
 ```
 
@@ -511,7 +514,7 @@ thread can have the correct provider without a project assignment. Register a fo
 and link an existing thread through the running server:
 
 ```bash
-mycodex projects add ~/MyProject
+mycodex projects add ~/MyProject [--trust] [--no-restart]
 mycodex threads link <thread-id> --project ~/MyProject
 ```
 
@@ -521,9 +524,9 @@ To start a new thread and first model turn inside that project:
 mycodex remote seed ~/MyProject --name "Login page" --message "Plan the login page first."
 ```
 
-mycodex finds the project whose root is `~/MyProject` (or creates it), starts a thread
-there, names it and sends your message as the first turn, all through the server's
-app-server API. Continue on the phone or with `mycodex resume <thread id>`.
+mycodex checks `bwrap` sandbox readiness, finds the project whose root is `~/MyProject` (or creates it), starts a thread
+there (with optional `--sandbox` / `--approval`), names it and sends your message as the first turn, all through the server's
+app-server API. Creating a new project via `projects add` or finishing a `remote seed` wait automatically restarts an active `mycodex-remote` service so the mobile app refreshes right away (`--no-restart` opts out; `--trust` adds workspace trust in `~/.codex/config.toml`). Continue on the phone or with `mycodex resume <thread id>`.
 
 Scripts can make the same calls over the official relay,
 `mycodex app-server proxy --sock "$(mycodex remote socket)"`. The protocol, the JSON-RPC
@@ -626,7 +629,8 @@ and can replace an existing managed unit copy; it does not install an absent lau
 |---|---|
 | `mycodex exec` prints `failed to connect to websocket: HTTP error: 426 Upgrade Required` | Expected. The proxy speaks HTTPS only; Codex switches to HTTPS for the session and continues. |
 | `socket parent must be owned by the user or root …` when running `codex remote-control` yourself | Your umask makes Codex's socket directory group-writable. Use `mycodex remote-control`, which runs with umask 0022. |
-| The phone shows the host but no project | `mycodex projects add ~/your-project`; link an existing thread or seed a new one |
+| The phone shows the host but no project (or `Loading projects...` spins) | Run `mycodex remote doctor`; register with `mycodex projects add ~/your-project` or `mycodex remote seed` (auto-restarts active service), or `mycodex remote restart` |
+| Mobile shell turns fail with `bwrap` / loopback errors | Check `mycodex remote doctor`; start/seed with `--sandbox danger-full-access --approval never` |
 | A thread is missing on the phone | `mycodex threads`; if its tag is not `openai`, `mycodex threads adopt ID` |
 | An existing thread is outside its project or unloaded | `mycodex threads link ID --project DIR_OR_NAME_OR_ID` ([guide](docs/projects-and-threads.md)); then verify phone synchronization |
 | Logs report a stale `.prodex` rollout path | `mycodex doctor --fix-rollout-paths`; inspect unresolved entries and retain its backup |
@@ -692,7 +696,7 @@ mycodex is an independent project and is not affiliated with OpenAI.
 
 ## Release verification
 
-Run `PYTHONPATH=src python3 -B tools/run_tests.py` from a clone to execute the 195-test suite in
+Run `PYTHONPATH=src python3 -B tools/run_tests.py` from a clone to execute the isolated test suite in
 temporary homes with external HTTP, external subprocess launches, and service signals
 blocked. FIFO regressions use bounded fixture workers; local fake backends handle requests.
 The tests do not consume real reset credits or operate live services.
@@ -725,6 +729,6 @@ identity/pairing and project threads, and preserved independent Codex processes.
 
 The model catalogue routing decoupling, live backend fetching, plan-tier ranking, and
 **GPT-6.2 model family** support in **v0.4.3** were deployed at **2026-11-17 19:31:05 UTC**;
-**v0.4.6** (`codex 0.169.0` alignment and 25-item audit fixes) is documented in [CHANGELOG.md](CHANGELOG.md)
+**v0.4.8** (auto-refresh on project create/seed, `remote doctor`, sandbox/approval/trust flags, and doc updates) builds on the verified **v0.4.6** / **v0.4.7** `codex 0.169.0` work documented in [CHANGELOG.md](CHANGELOG.md)
 and [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md). Personal host notes, runtime state,
 credentials, and temporary recovery scripts are excluded from the public repository and archives.

@@ -3,8 +3,7 @@
 This document explains how mycodex works internally and why each mechanism exists. For
 everyday use, read the [README](../README.md) and the [Quickstart](../QUICKSTART.md).
 The investigation behind these choices is in [discovery-and-design.md](discovery-and-design.md).
-The 2026-10-04 review and v0.3.0 publication are historical. Updated for
-**v0.4.6** on 2026-11-26 (197 isolated tests). See the [changelog](../CHANGELOG.md) and [mycodex-audit-report.md](mycodex-audit-report.md);
+The 2026-10-04 review and v0.3.0 publication are historical. Updated for **v0.4.8** on 2026-11-28. See the [changelog](../CHANGELOG.md) and [mycodex-audit-report.md](mycodex-audit-report.md);
 this document describes actual mechanisms rather than guarantees of every failure path.
 
 ## Layering
@@ -296,8 +295,8 @@ Remote control runs as the systemd user service `mycodex-remote`. Its unit lives
 
 | Mode | Command inside the service | Phone pairs with | Model turns | Thread tag |
 |---|---|---|---|---|
-| `rotating` | `codex -c openai_base_url="http://127.0.0.1:<port>/backend-api/codex" remote-control` (proxy in the supervisor) | P | rotate across ready accounts | `openai` |
-| `pinned` | `codex remote-control` | P | always P | `openai` |
+| `rotating` | `codex -c openai_base_url="http://127.0.0.1:<port>/backend-api/codex" [-c sandbox_mode=…] [-c approval_policy=…] remote-control` (proxy in the supervisor) | P | rotate across ready accounts | `openai` |
+| `pinned` | `codex [-c sandbox_mode=…] [-c approval_policy=…] remote-control` | P | always P | `openai` |
 
 Why each piece exists:
 
@@ -323,7 +322,7 @@ and exits with status 75; systemd restarts the service as that account. The phon
 be signed in to the new account.
 This path runs only while the child remains alive through a check. An immediate child
 exit returns without a failover decision (R06). Foreground mode has no failover tick and
-now rejects cwd/failover/force/no-wait flags with a readable error (R05 resolved). Start/restart/stop and
+now rejects cwd/sandbox/approval/failover/force/no-wait flags with a readable error (R05 resolved). Start/restart/stop and
 daemon conflict handling can interrupt active work; none are used just to refresh docs.
 
 **Model cache sharing.** `mycodex remote models share [SOURCE]` immediately copies a
@@ -363,9 +362,11 @@ Projects are separate from tags. A thread belongs to a project only when a clien
 the project id (`thread/start` with `projectId`, or `thread/metadata/update`); Codex does
 not derive it from the working directory, and the wrapper's TUI/exec launch does not
 supply one.
-`mycodex remote seed DIR` therefore runs on the server: it reuses or creates the project
-whose root is DIR (the idempotency key is derived from the path), starts a thread with that
-project, names it and starts the first turn, which is what saves a thread. See
+`mycodex remote seed DIR` therefore runs on the server: it checks `sandbox_status()`, reuses or creates the project
+whose root is DIR (the idempotency key is derived from the path), optionally writes
+`[projects."..."]` trust (`--trust`), starts a thread with that project (and optional `sandbox`/`approvalPolicy`),
+names it, starts the first turn (which is what saves a thread), and automatically restarts an active
+phone service once waiting completes (`--no-restart` opts out; skipped with `--no-wait` or unresolved turns). See
 [projects-and-threads.md](projects-and-threads.md).
 
 A thread created under another provider id (prodex used `prodex-openai-governed-http`)
@@ -383,7 +384,8 @@ empty results.
 `thread/resume` to load it on the running server, without starting a turn. A `notLoaded`
 thread is normally just unloaded; loading it emits the server lifecycle notifications,
 but mobile rendering remains client-dependent. Project discovery handles every page
-and rejects ambiguous names/roots. `projects add` creates no thread. `projects clean`
+and rejects ambiguous names/roots. `projects add` creates no thread and automatically restarts an
+active remote service when a new project is created (`--no-restart` opts out; `--trust` trusts the folder). `projects clean`
 only archives verified empty histories or a single untouched built-in ready-check turn,
 with confirmation and a second history check; it skips active work/descendants observed
 at those checks. Read and archive are separate RPCs, so cross-client races require backend
@@ -491,4 +493,4 @@ and no service restart is part of source/help updates.
 ## Published release and host verification
 
 [Changelog](../CHANGELOG.md) and [mycodex-audit-report.md](mycodex-audit-report.md) record
-the `v0.4.6` release, `codex 0.169.0` alignment fixes, and the 197-test isolated suite.
+the release history, `codex 0.169.0` alignment fixes, and the isolated test suite.

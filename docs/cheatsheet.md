@@ -60,7 +60,7 @@ These commands require a running phone-capable app-server, except local thread l
 
 ```bash
 mycodex projects
-mycodex projects add ~/MyProject --name "My Project"
+mycodex projects add ~/MyProject --name "My Project"   # registers & refreshes active phone service
 mycodex threads -n 40
 mycodex threads link CONVERSATION-ID --project ~/MyProject
 mycodex projects clean "My Project" --dry-run
@@ -68,13 +68,16 @@ mycodex projects clean "My Project"   # inspect candidates, then confirm archive
 mycodex remote seed ~/MyProject --message "Plan the next change"
 ```
 
-Linking creates no turn. Seeding sends a request and uses model quota. Cleanup archives
-verified empty/ready-check histories and does not provide an atomic cross-client lock.
+Linking creates no turn. Seeding sends a request and uses model quota. Both creating a new
+project and waiting for `remote seed` automatically restart an active phone service unless
+`--no-restart` is passed. Cleanup archives verified empty/ready-check histories and does not
+provide an atomic cross-client lock.
 
 ## Phone connection and problems
 
 ```bash
 mycodex remote status
+mycodex remote doctor                # check relay, mobile visibility, bwrap, trust, and logs
 mycodex remote pair
 mycodex remote clients
 mycodex remote models share work     # share available models; keep each thread's model choice
@@ -104,4 +107,4 @@ mycodex projects clean --help
 mycodex -- --help                    # official Codex's own commands and options
 ```
 
-See [v0.4.6 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).
+See [v0.4.8 changes](../CHANGELOG.md) and the [Quickstart](../QUICKSTART.md).

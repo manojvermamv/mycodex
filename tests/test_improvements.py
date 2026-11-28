@@ -1144,7 +1144,8 @@ class ModelCacheShareTest(unittest.TestCase):
         with mock.patch('mycodex.remote_cmd.server_socket', return_value=('/sock', 'profile')), \
              mock.patch('mycodex.appserver.AppServer', return_value=FakeServer()), \
              mock.patch('pathlib.Path.is_dir', return_value=True), \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(remote_cmd.seed('/test', None, None, wait=False), 0)
         start_call = [p for m, p in calls if m == 'thread/start'][0]
         self.assertEqual(start_call.get('threadSource'), 'user')

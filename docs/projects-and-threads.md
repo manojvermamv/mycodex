@@ -9,7 +9,7 @@ lookup/concurrency notes.
 Model selection remains user controlled for each conversation. Sharing the relay's
 model catalogue and switching accounts preserve selected models and reasoning settings;
 they do not apply one model to every project thread. See the [command guide](cli-guide.md)
-and [v0.4.6 changes](../CHANGELOG.md).
+and [v0.4.8 changes](../CHANGELOG.md).
 
 ## How Codex files threads under projects
 
@@ -35,10 +35,12 @@ start/restart one. `projects` currently has no offline fallback, rename, or dele
 ```bash
 mycodex projects
 mycodex projects --json
-mycodex projects add ~/MyProject --name "My Project"
+mycodex projects add ~/MyProject --name "My Project" [--trust] [--no-restart]
 ```
 
-Registration reuses the folder's existing project and creates no thread. Lists include
+Registration reuses the folder's existing project and creates no thread; creating a new
+project automatically restarts an active phone service unless `--no-restart` is passed.
+`--trust` idempotently marks the folder trusted in `~/.codex/config.toml`. Lists include
 all pages and count non-archived threads across all providers and source types.
 That count includes threads regardless of loaded/active state. `--name` applies when
 creating a project; adding an already-registered folder does not rename it. Use an exact
@@ -83,17 +85,20 @@ cross-client lock, so schedule cleanup when candidate threads are idle.
 
 ```bash
 mycodex remote seed ~/MyProject --name "Login page" \
-  --message "Plan the login page. List the files you would change first."
+  --message "Plan the login page. List the files you would change first." \
+  [--sandbox danger-full-access] [--approval never] [--trust] [--no-restart]
 ```
 
 With the remote-control service running, this:
 
-1. lists the projects and reuses the one whose root is `~/MyProject`, or creates it
+1. checks `bwrap` / sandbox readiness (use `--sandbox` / `--approval` if container userns blocks bubblewrap) and optionally writes `[projects."..."]` trust (`--trust`);
+2. lists the projects and reuses the one whose root is `~/MyProject`, or creates it
    (named after the folder; `--project NAME` chooses another name);
-2. starts a thread there (`thread/start` with `cwd` and `projectId`);
-3. names it (`thread/name/set`);
-4. starts its first turn with your message (`turn/start`) and waits up to three minutes
+3. starts a thread there (`thread/start` with `cwd` and `projectId`, plus optional `sandbox` and `approvalPolicy`);
+4. names it (`thread/name/set`);
+5. starts its first turn with your message (`turn/start`) and waits up to three minutes
    for it. The turn keeps running on the server after that, or if you pass `--no-wait`.
+6. when waiting finishes cleanly and `--no-restart` is not set, automatically restarts an active phone service so mobile clients see the updated project right away.
 
 Without `--message`, the first turn is a one-word "ready" check, so the thread exists
 with a minimal model interaction; it still consumes model quota and uses the server's
@@ -108,7 +113,8 @@ mycodex <full-thread-UUID>
 
 The turn runs as the server's relay account; in rotating mode its model requests rotate
 across your ready accounts like any other turn. The usual `~/.codex/config.toml` approval
-and sandbox settings apply.
+and sandbox settings apply unless overridden via `--sandbox` / `--approval` (or saved on `remote start`),
+and `--trust` idempotently marks the project trusted in `~/.codex/config.toml`.
 Seed may return while the turn is still running if the wait expires; exit zero alone
 does not prove completion. Failure between project/thread/turn operations can leave a
 partial result. Inspect it before retrying to avoid creating another thread.
@@ -237,7 +243,7 @@ print(loaded["id"], loaded["projectId"], loaded["status"])
 | The thread is outside the project or unloaded | `mycodex threads link ID --project DIR_OR_NAME_OR_ID` updates metadata and resumes it |
 | Linking saves assignment but hydration fails | Retry the reported command; inspect active writers/errors; the assignment was retained |
 | Adding a folder ignores the supplied new name | The folder is already registered; `add` reuses it and is not a rename command |
-| Correct provider/project still does not appear on the phone | Check loaded state, relay account, and client synchronization; host eligibility is not proof of rendering |
+| Correct provider/project still does not appear on the phone | Run `mycodex remote doctor`, check loaded state/relay/client sync, or run `mycodex remote restart` (auto-run on create/`seed` wait unless `--no-restart`) |
 | `codex app-server proxy` fails to connect | Pass `--sock "$(mycodex remote socket)"`; the default socket is not the service's server |
 
 ## Command help and input checks
@@ -253,8 +259,6 @@ The remaining deferred service lifecycle note (R06) is tracked in [mycodex-audit
 ## v0.3.0 release
 
 These project/conversation commands ship in [v0.3.0](../CHANGELOG.md). The
-[everyday commands](cheatsheet.md) provide short examples, and
-`python3 -B tools/run_tests.py` runs the 114-test isolated suite. The corrected host
-deployment retained conversation projects and phone pairing, and its observer completed
-healthy monitoring. Publication does not reload active sessions; the known lookup and
-concurrency limits remain documented in the review.
+[everyday commands](cheatsheet.md) provide short examples, and `tools/run_tests.py` runs
+the isolated suite (currently **208** tests). Publication does not reload active sessions;
+remaining edge cases and audit history are documented in [mycodex-audit-report.md](mycodex-audit-report.md).

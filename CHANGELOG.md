@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.8 — 2026-11-28
+
+- **Automatic Mobile Refresh on Project Create & Seed (`projects.py`, `remote_cmd.py`, `cli.py`)**:
+  - `mycodex projects add` (when registering a new project) and `mycodex remote seed` / `mycodex seed` (when the first turn completes) now restart an active `mycodex-remote.service` automatically so paired phones see new projects without manual restarts (`--no-restart` opts out; `--no-wait` or unresolved/interrupted turns skip restart to protect the active turn; seed-only flags passed with a thread ID fail fast).
+- **New `mycodex remote doctor [--json]` Command (`remote_cmd.py`, `codex.py`, `doctor.py`, `cli.py`, `helptext.py`)**:
+  - Diagnoses the phone service, relay account quota, rotation proxy/pool, `remoteControl` connection, paired clients, registered project roots, mobile `thread/list` visibility & `thread/loaded/list` hydration, hidden non-`openai` threads, `bwrap`/sandbox readiness, workspace trust (`config.toml`), `.codex-global-state.json` presence, and recent SQLite + `proxy.log` errors (scoped to the last hour).
+- **Sandbox, Approval & Workspace Trust Controls (`codex.py`, `config.py`, `remote.py`, `remote_cmd.py`, `doctor.py`)**:
+  - Added `codex.sandbox_status()` (`bwrap` PATH/bundled detection, kernel/AppArmor userns sysctls, recent `%bubblewrap%` errors) surfaced across `doctor`, `remote doctor`, `remote status`, `remote start`, and `remote seed`.
+  - Added `--sandbox` (`read-only`, `workspace-write`, `danger-full-access`, plus `default` on `remote start`) and `--approval` (`untrusted`, `on-request`, `never`, plus `default` on `remote start`) to `remote start`, `remote-control`, and `remote seed`, plus locked/atomic `--trust` (`[projects."..."] trust_level = "trusted"`) in `~/.codex/config.toml`.
+- **Tests & Documentation Alignment**:
+  - Added [tests/test_remote_enhancements.py](tests/test_remote_enhancements.py); **208 isolated tests pass**.
+  - Updated `README.md`, `QUICKSTART.md`, `helptext.py`, `docs/cli-guide.md`, and `docs/*.md`, removing stale links to removed docs (`project-review.md`, `redeployment.md`).
+
 ## v0.4.7 — 2026-11-27
 
 - **Audit Follow-Ups & Edge-Case Hardening**:
@@ -96,7 +109,7 @@
   weekly-only automatic redemption after stopping the old proxy. Its two-minute
   health monitor finished with no misses or rollback attempts. Fresh checks confirm
   the connected relay/proxy, retained phone identity/pairing and project threads,
-  and preserved independent Codex processes. See the [deployment record](docs/redeployment.md#weekly-only-reset-deployment--2026-10-12).
+  and preserved independent Codex processes (v0.4.2 deployment record).
 - **166 isolated application tests** pass. The frozen recovery version passed 145
   tests; 30 private observer checks cover lifecycle and policy activation/recovery.
   Real credits were not spent for verification. Automatic spending remains off by
@@ -150,12 +163,11 @@ remain unchanged. Private observer/recovery artifacts are excluded from Git.
 
 - At v0.4.0 publication, new CLI invocations loaded 0.4.0 while the running proxy
   awaited a guarded restart. That waiting job was later cancelled before restarting
-  and superseded by the v0.4.1 handoff. See the [redeployment guide](docs/redeployment.md).
+  and superseded by the v0.4.1 handoff.
 - The package contains 29 modules; 143 isolated tests pass with external HTTP, external
   subprocess launches, and service signals blocked. Generated help and public documentation
   links are checked.
-- Existing R01/R06 service lifecycle defects and the other limitations in the
-  [project review](docs/project-review.md) remain open. Real reset spending, phone
+- Existing R01/R06 service lifecycle defects and other historical limitations remain noted below (R01 was later resolved; see [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md)). Real reset spending, phone
   rendering, and full concurrency/recovery behavior are not established by these tests.
 
 ## v0.3.0 — 2026-10-05
@@ -213,8 +225,7 @@ redemption, proactive usage routing, and complete plain-language command help.
 - Online usage/diagnostic checks may renew logins and save snapshots. Model requests,
   cleanup, and credit spending have the side effects described in detailed help.
 - Updating source does not reload already-running processes. The host deployment
-  completed on 2026-10-05 with a corrected independent observer and retained pairing.
-  The [redeployment guide](docs/redeployment.md) documents this host-specific procedure;
+  completed on 2026-10-05 with a corrected independent observer and retained pairing;
   its temporary private observer scripts are not a reusable CLI feature in this release.
 - 114 isolated project tests pass. The temporary deployment observer had 22 mocked
   regressions; these are separate host artifacts, not part of the public test suite.
@@ -226,8 +237,8 @@ redemption, proactive usage routing, and complete plain-language command help.
   removal confirmation; cancellation does not undo that stop.
 - R06: an immediate Codex child exit bypasses the periodic relay failover tick.
 - Startup legacy relocation, thread lookup/listing ceilings, numeric SQLite schema
-  selection, WebSocket Ping replies, and broader concurrency/recovery risks remain
-  tracked in the [project review](docs/project-review.md). Do not treat the deployment
+  selection, WebSocket Ping replies, and broader concurrency/recovery risks were
+  tracked in the v0.3.0 review and resolved in [docs/mycodex-audit-report.md](docs/mycodex-audit-report.md). Do not treat the deployment
   observer as a permanent fix for R01/R06.
 
 ## v0.2.0 — 2026-10-03

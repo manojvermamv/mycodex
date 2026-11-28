@@ -121,11 +121,18 @@ def service_info() -> dict[str, str]:
 
 
 # ----------------------------------------------------------------------------- serve
-def server_args(mode: str, base_url: str | None) -> list[str]:
+def server_args(mode: str, base_url: str | None, sandbox: str | None = None,
+                approval: str | None = None) -> list[str]:
     """codex arguments for the foreground remote-control server."""
+    args: list[str] = []
     if mode == "rotating" and base_url:
-        return [*launch.proxy_args(base_url), "remote-control"]
-    return ["remote-control"]
+        args.extend(launch.proxy_args(base_url))
+    if sandbox:
+        args.extend(["-c", f'sandbox_mode="{sandbox}"'])
+    if approval:
+        args.extend(["-c", f'approval_policy="{approval}"'])
+    args.append("remote-control")
+    return args
 
 
 def _write_serve_state(data: dict[str, Any]) -> None:
@@ -192,16 +199,23 @@ def run_server(profile: profiles.Profile, mode: str, cfg: dict[str, Any], servic
     os.umask(0o022)
     profiles.prepare_home(profile.home)
     env = launch.codex_env(profile, "remote-serve")
+    remote_cfg = cfg["remote"]
     proxy = RotationProxy(profile.name, role="remote", echo=service).start() if mode == "rotating" else None
-    argv = [paths.codex_bin(), *server_args(mode, proxy.base_url if proxy else None)]
-    _say(f"starting mode={mode} relay={profile.name}" + (f" proxy=127.0.0.1:{proxy.port}" if proxy else ""))
+    sandbox = remote_cfg.get("sandbox")
+    approval = remote_cfg.get("approval")
+    argv = [paths.codex_bin(), *server_args(mode, proxy.base_url if proxy else None,
+                                             sandbox=sandbox, approval=approval)]
+    _say(f"starting mode={mode} relay={profile.name}"
+         + (f" sandbox={sandbox}" if sandbox else "")
+         + (f" approval={approval}" if approval else "")
+         + (f" proxy=127.0.0.1:{proxy.port}" if proxy else ""))
 
     def started(child: subprocess.Popen[bytes]) -> None:
         if service:
             _write_serve_state({"pid": os.getpid(), "child_pid": child.pid, "mode": mode, "profile": profile.name,
+                                "sandbox": sandbox, "approval": approval,
                                 "proxy_port": proxy.port if proxy else None, "started_at": time.time()})
 
-    remote_cfg = cfg["remote"]
     interval = max(60, int(remote_cfg.get("failover_check_seconds") or 300))
     next_check = [time.time() + interval]
 

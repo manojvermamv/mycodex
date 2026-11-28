@@ -234,7 +234,18 @@ def run(fix: bool = False, assume_yes: bool = False, as_json: bool = False) -> i
                   "; every live thread is visible to the phone and every terminal")
                + (f"; {adopted} adopted" if adopted else ""))
 
+    sb = codex.sandbox_status()
+    sb_override = cfg["remote"].get("sandbox")
+    report.add("sandbox",
+               OK if (sb["ready"] or sb_override == "danger-full-access") else WARN,
+               sb["summary"] + (f" (remote sandbox override: {sb_override})" if sb_override else
+                                (" — use `--sandbox danger-full-access` on `remote start/seed` if commands fail" if not sb["ready"] else "")))
+
     # -- render -----------------------------------------------------------------------------
+    return render(report, "Mycodex Doctor", as_json)
+
+
+def render(report: Report, title: str, as_json: bool = False) -> int:
     worst = FAIL if any(r == FAIL for _, r, _ in report.rows) else (WARN if any(r == WARN for _, r, _ in report.rows) else OK)
     if as_json:
         print(json.dumps({"result": worst, "checked_at": int(time.time()),
@@ -245,6 +256,6 @@ def run(fix: bool = False, assume_yes: bool = False, as_json: bool = False) -> i
     def styler(_label: str, value: str) -> ui.Style:
         return styles.get(value[1:value.find("]")] if value.startswith("[") else "", ui.PRIMARY)
 
-    ui.panel("Mycodex Doctor", [(check, f"[{result}] {detail}") for check, result, detail in report.rows],
+    ui.panel(title, [(check, f"[{result}] {detail}") for check, result, detail in report.rows],
              subtitle=f"overall {worst}", styler=styler)
     return 1 if worst == FAIL else 0

@@ -91,7 +91,8 @@ def list_projects(as_json: bool = False) -> int:
     return 0
 
 
-def add(directory: str, name: str | None = None, as_json: bool = False) -> int:
+def add(directory: str, name: str | None = None, as_json: bool = False,
+        restart: bool = True, trust: bool = False) -> int:
     root = Path(directory).expanduser().resolve()
     if not root.is_dir():
         ui.error(f"{root} is not a directory")
@@ -99,12 +100,21 @@ def add(directory: str, name: str | None = None, as_json: bool = False) -> int:
     if name is not None and not name.strip():
         ui.error("project name must not be empty")
         return 2
+    from . import codex, remote_cmd
+    trusted = codex.trust_project(root) if trust else False
     with connection() as server:
         project, created = ensure(server, root, name)
+    restarted, connected = (False, False)
+    if created and restart:
+        restarted, connected = remote_cmd.restart_if_active(wait=True, reason="project created", quiet=as_json)
     if as_json:
-        print(json.dumps({"project": project, "created": created}, indent=2))
+        print(json.dumps({"project": project, "created": created, "trusted": trusted,
+                          "restarted": restarted, "connected": connected}, indent=2))
     else:
-        ui.success(f"project {project['name']} ({project['id']}) {'created' if created else 'already registered'} at {root}")
+        suffix = "; trusted in config.toml" if trusted else ""
+        if restarted:
+            suffix += "; remote service restarted" + (" (connected)" if connected else " (still connecting)")
+        ui.success(f"project {project['name']} ({project['id']}) {'created' if created else 'already registered'} at {root}{suffix}")
     return 0
 
 

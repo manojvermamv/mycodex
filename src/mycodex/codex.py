@@ -267,3 +267,191 @@ def umask() -> int:
     current = os.umask(0)
     os.umask(current)
     return current
+
+
+def _read_sysctl_flag(path: str) -> str | None:
+    try:
+        return Path(path).read_text().strip()
+    except OSError:
+        return None
+
+
+def sandbox_status() -> dict[str, Any]:
+    """Check whether Linux bubblewrap (bwrap) sandboxing is ready on PATH without restrictions."""
+    bwrap_on_path = paths.which("bwrap")
+    rel_glob = sorted((paths.SHARED_CODEX_HOME / "packages" / "standalone" / "releases").glob("*/codex-resources/bwrap"))
+    bwrap_bundled = str(rel_glob[-1]) if rel_glob else None
+    clone_val = _read_sysctl_flag("/proc/sys/kernel/unprivileged_userns_clone")
+    apparmor_val = _read_sysctl_flag("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+    userns_restricted = (clone_val == "0") or (apparmor_val == "1")
+    recent_errors = recent_log_errors(86400, "%bubblewrap%")
+    ready = bool(bwrap_on_path) and not userns_restricted and not recent_errors
+    reasons: list[str] = []
+    if not bwrap_on_path:
+        reasons.append("bwrap is not on PATH" + (f" (bundled binary exists at {bwrap_bundled})" if bwrap_bundled else ""))
+    if userns_restricted:
+        reasons.append("unprivileged user namespaces are restricted by kernel/AppArmor")
+    if recent_errors:
+        reasons.append(f"{len(recent_errors)} bubblewrap error(s) in recent Codex logs")
+    summary = "bwrap ready on PATH" if ready else "; ".join(reasons)
+    return {
+        "ready": ready,
+        "bwrap_on_path": bwrap_on_path,
+        "bwrap_bundled": bwrap_bundled,
+        "userns_restricted": userns_restricted,
+        "recent_errors": len(recent_errors),
+        "summary": summary,
+    }
+
+
+def _codex_config_path(config_path: Path | None = None) -> Path:
+    return config_path or (paths.SHARED_CODEX_HOME / "config.toml")
+
+
+def _resolve_project_key(raw: str) -> str:
+    try:
+        return str(Path(raw).expanduser().resolve())
+    except OSError:
+        return str(Path(raw).expanduser())
+
+
+def _parse_project_header(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("["):
+        return None
+    # Strip trailing comment outside quotes cleanly via a lightweight TOML table match
+    m_dq = re.match(r'^\[\s*projects\s*\.\s*"((?:[^"\\]|\\.)*)"\s*\](?:\s*#.*)?$', stripped)
+    if m_dq:
+        try:
+            return str(json.loads(f'"{m_dq.group(1)}"'))
+        except ValueError:
+            return m_dq.group(1)
+    m_sq = re.match(r"^\[\s*projects\s*\.\s*'([^']*)'\s*\](?:\s*#.*)?$", stripped)
+    if m_sq:
+        return m_sq.group(1)
+    return None
+
+
+def trusted_projects(config_path: Path | None = None) -> dict[str, str]:
+    """Return `{resolved_path: trust_level}` from `~/.codex/config.toml` `[projects.*]` tables."""
+    path = _codex_config_path(config_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    try:
+        import tomllib
+        parsed = tomllib.loads(text)
+        raw_projects = parsed.get("projects")
+        if isinstance(raw_projects, dict):
+            return {
+                _resolve_project_key(k): str(v.get("trust_level", ""))
+                for k, v in raw_projects.items()
+                if isinstance(v, dict)
+            }
+    except Exception:
+        pass
+    out: dict[str, str] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        s = line.strip()
+        key = _parse_project_header(line)
+        if key is not None:
+            current = _resolve_project_key(key)
+            out.setdefault(current, "")
+        elif s.startswith("["):
+            current = None
+        elif current and re.match(r"^trust_level\s*=", s):
+            tm = re.match(r'^trust_level\s*=\s*["\']([^"\']*)["\']', s)
+            if tm:
+                out[current] = tm.group(1)
+    return out
+
+
+def trust_project(directory: Path, config_path: Path | None = None) -> bool:
+    """Idempotently mark `directory` as `trust_level = "trusted"` in `~/.codex/config.toml`."""
+    import fcntl
+    import tempfile
+
+    resolved = _resolve_project_key(str(directory))
+    path = _codex_config_path(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".toml.lock")
+    with open(lock_path, "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        existing_trust = trusted_projects(path)
+        if existing_trust.get(resolved) == "trusted":
+            return False
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            text = ""
+        header = f"[projects.{json.dumps(resolved)}]"
+        lines = text.splitlines()
+        for idx, line in enumerate(lines):
+            existing_key = _parse_project_header(line)
+            if existing_key is not None and _resolve_project_key(existing_key) == resolved:
+                end = idx + 1
+                replaced = False
+                while end < len(lines) and not lines[end].strip().startswith("["):
+                    if re.match(r"^trust_level\s*=", lines[end].strip()):
+                        lines[end] = 'trust_level = "trusted"'
+                        replaced = True
+                        break
+                    end += 1
+                if not replaced:
+                    lines.insert(idx + 1, 'trust_level = "trusted"')
+                new_text = "\n".join(lines) + "\n"
+                break
+        else:
+            if resolved in existing_trust:
+                raise OSError(f"{path} defines {resolved} outside a [projects.\"...\"] header; update trust_level manually")
+            sep = "\n\n" if text.strip() else ""
+            new_text = text.rstrip() + sep + f'{header}\ntrust_level = "trusted"\n'
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=".config.", suffix=".tmp", delete=False) as handle:
+                tmp_path = handle.name
+                handle.write(new_text)
+            os.chmod(tmp_path, 0o600)
+            os.replace(tmp_path, path)
+            tmp_path = None
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+    return True
+
+
+def recent_proxy_errors(limit: int = 20, path: Path | None = None, since_seconds: int | None = None) -> list[str]:
+    """Scan proxy.log for HTTP error status codes (`401`, `403`, `429`, `5xx`) or request errors."""
+    import datetime
+
+    log_path = path or paths.PROXY_LOG
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    cutoff = (datetime.datetime.now(datetime.timezone.utc).timestamp() - since_seconds) if since_seconds is not None else None
+    hits: list[str] = []
+    for line in lines[-500:]:
+        if not any(tok in line for tok in ("status=5", "status=401", "status=403", " error ", "exhausted", "failed")):
+            continue
+        if cutoff is not None:
+            head = line.split(" ", 1)[0]
+            ts: float | None = None
+            if "T" in head:
+                try:
+                    dt = datetime.datetime.fromisoformat(head.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    ts = dt.timestamp()
+                except ValueError:
+                    ts = None
+            if ts is not None and ts < cutoff:
+                continue
+        hits.append(line)
+    return hits[-limit:]

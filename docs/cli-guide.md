@@ -1,7 +1,7 @@
 # Command and option guide
 
 Use this guide to choose a command and understand every mycodex option.
-This guide targets mycodex v0.4.6; see the [changelog](../CHANGELOG.md) and
+This guide targets mycodex v0.4.8; see the [changelog](../CHANGELOG.md) and
 [everyday commands](cheatsheet.md).
 
 Command names and flags stay compatible. A saved account is called a **profile**
@@ -139,7 +139,7 @@ mycodex profile reauth [NAME] [--browser]
 
 ## profile remove
 
-Remove a saved account. Confirms before stopping the phone connection (even with `--force`).
+Remove a saved account. Confirms before stopping the phone connection (even with --force).
 
 ```text
 mycodex profile remove NAME [OPTIONS]
@@ -433,7 +433,7 @@ mycodex projects [list] [--json]
 
 ## projects add
 
-Register a folder as a project without starting a conversation. Existing registrations are reused, not renamed.
+Register a folder as a project without starting a conversation, and restart an active phone service so mobile sees it.
 
 ```text
 mycodex projects add DIR [OPTIONS]
@@ -443,6 +443,8 @@ mycodex projects add DIR [OPTIONS]
 |---|---|
 | `DIR` | An existing project folder. |
 | `--name NAME` | Name for a newly registered project; default is the folder name. |
+| `--trust` | Mark this project folder as trusted in ~/.codex/config.toml. |
+| `--no-restart` | Keep the running phone service as-is after creating a new project. |
 | `--json` | Show structured data for scripts instead of the usual table. |
 | `-h, --help` | Show instructions without needing required values. |
 
@@ -491,6 +493,19 @@ Check the phone connection and paired devices. The usual display also checks usa
 
 ```text
 mycodex remote [status] [--json]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `--json` | Show structured data for scripts instead of the usual table. |
+| `-h, --help` | Show instructions without needing required values. |
+
+## remote doctor
+
+Diagnose the phone service, mobile project/thread visibility, bubblewrap sandboxing, workspace trust, and error logs.
+
+```text
+mycodex remote doctor [--json]
 ```
 
 | Parameter | Meaning |
@@ -553,7 +568,7 @@ mycodex remote logs [OPTIONS]
 
 ## remote seed
 
-Start a new project conversation and send its first message. This uses model quota even for the default ready check.
+Start a new project conversation, send its first message, and refresh an active phone service once complete. Uses model quota even for the default ready check.
 
 ```text
 mycodex remote seed [DIR] [OPTIONS]
@@ -565,7 +580,11 @@ mycodex remote seed [DIR] [OPTIONS]
 | `--name NAME` | Conversation name; default is the folder name. |
 | `--message TEXT` | First request; quote text containing spaces. Default asks for the word ready. |
 | `--project NAME` | Name used only if creating a new project; it does not select a different existing project. |
-| `--no-wait` | Return after sending the request; the turn keeps running on the server. |
+| `--sandbox MODE` | Thread sandbox policy: read-only, workspace-write, or danger-full-access. |
+| `--approval POLICY` | Thread approval policy: untrusted, on-request, or never. |
+| `--trust` | Mark the project folder as trusted in ~/.codex/config.toml. |
+| `--no-restart` | Do not automatically restart the phone service after seeding. |
+| `--no-wait` | Return after sending the request; skips auto-restart so the first turn finishes. |
 | `-h, --help` | Show instructions without needing required values. |
 
 ## remote socket
@@ -680,6 +699,8 @@ mycodex remote start [OPTIONS]
 | `--failover` | Allow the phone service to switch its login account if a health check fails; on for new starts. |
 | `--no-failover` | Keep the phone account fixed; repair its login manually if it stops working. |
 | `--cwd DIR` | Starting folder for new phone conversations; default is the saved folder or your home. |
+| `--sandbox MODE` | Default remote-control sandbox policy: read-only, workspace-write, danger-full-access, or default. |
+| `--approval POLICY` | Default remote-control approval policy: untrusted, on-request, never, or default. |
 | `--force` | Stop conflicting phone servers. Can interrupt their work. |
 | `--no-wait` | Return after starting the service, without waiting for connection confirmation. |
 | `-h, --help` | Show instructions without needing required values. |
@@ -700,6 +721,8 @@ mycodex [--profile NAME] remote-control [OPTIONS]
 | `--failover` | Allow the phone service to switch its login account if a health check fails; on for new starts. |
 | `--no-failover` | Keep the phone account fixed; repair its login manually if it stops working. |
 | `--cwd DIR` | Starting folder for new phone conversations; default is the saved folder or your home. |
+| `--sandbox MODE` | Default remote-control sandbox policy: read-only, workspace-write, danger-full-access, or default. |
+| `--approval POLICY` | Default remote-control approval policy: untrusted, on-request, never, or default. |
 | `--force` | Stop conflicting phone servers. Can interrupt their work. |
 | `--no-wait` | Return after starting the service, without waiting for connection confirmation. |
 | `--foreground` | Advanced: run in this terminal, using profile/mode only. Other service options are not supported. |
@@ -711,6 +734,5 @@ mycodex [--profile NAME] remote-control [OPTIONS]
 - `rotation auto-redeem on` spends only at 0% weekly quota with at least one credit, in account order; never for a 5-hour limit alone.
 - Preserve `state/accounts.json`; unreadable state is reported without replacing its retry keys.
 - Starting/stopping/restarting the phone service can interrupt active work.
-- Early-exit failover (R06) remains open; forced phone-account removal now confirms before stopping the service:
-  [see the audit report](mycodex-audit-report.md).
+- Check [mycodex-audit-report.md](mycodex-audit-report.md) for verified fixes and remaining edge cases.
 - Existing running processes keep their loaded source code until a planned restart.

@@ -10,16 +10,59 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import appserver, config, fmt, model_cache, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
+from . import appserver, codex, config, fmt, model_cache, paths, procs, profiles, proxy, quota, remote, resolve, state, ui
 
 def _active() -> bool:
     return remote.service_info().get("ActiveState") in remote.ACTIVE_STATES
 
 
+def _validate_policy(value: str | None, valid: tuple[str, ...], flag: str, allow_default: bool = False) -> str | None:
+    if value is None:
+        return None
+    if allow_default and value == "default":
+        return "default"
+    if value not in valid:
+        choices = ", ".join((*valid, "default") if allow_default else valid)
+        raise SystemExit(f"Error: unknown {flag} '{value}' (choose: {choices})")
+    return value
+
+
+def _warn_if_sandbox_unready(effective_sandbox: str | None) -> dict[str, Any]:
+    sb = codex.sandbox_status()
+    if not sb["ready"] and effective_sandbox != "danger-full-access":
+        ui.warn(f"sandbox readiness: {sb['summary']}; pass `--sandbox danger-full-access --approval never` if mobile shell commands fail")
+    return sb
+
+
+def restart_if_active(wait: bool = True, reason: str = "project change", quiet: bool = False) -> tuple[bool, bool]:
+    """Restart the managed remote-control service if it is running so phones see fresh state."""
+    if not paths.REMOTE_UNIT_FILE.exists() or not _active():
+        return False, False
+    box = None if quiet else ui.StatusBox("Mycodex Phone Connection")
+    if box:
+        box.update("restarting", f"refreshing remote-control service ({reason})")
+    res = remote._systemctl("restart", paths.REMOTE_UNIT)
+    if res.returncode != 0:
+        if box:
+            box.clear()
+        if not quiet:
+            detail = (res.stderr or res.stdout).strip()
+            ui.warn("could not automatically restart remote-control service" + (f": {detail}" if detail else ""))
+        return False, False
+    if not wait:
+        if box:
+            box.clear()
+        return True, False
+    connected = remote.wait_until_connected(box=box)
+    if box:
+        box.clear()
+    return True, bool(connected)
+
+
 # ----------------------------------------------------------------------------- start
 def start(profile: str | None = None, mode: str | None = None, cwd: str | None = None,
           failover: bool | None = None, force: bool = False, wait: bool = True,
-          restart: bool = False) -> int:
+          restart: bool = False, sandbox: str | None = None, approval: str | None = None) -> int:
     cfg = config.load()
     names = profiles.names(cfg)
     if not names:
@@ -31,6 +74,10 @@ def start(profile: str | None = None, mode: str | None = None, cwd: str | None =
     if mode not in config.REMOTE_MODES:
         ui.error(f"unknown mode '{mode}' (use rotating or pinned)")
         return 2
+    sandbox_arg = _validate_policy(sandbox, config.SANDBOX_MODES, "--sandbox", allow_default=True)
+    approval_arg = _validate_policy(approval, config.APPROVAL_POLICIES, "--approval", allow_default=True)
+    effective_sandbox = (None if sandbox_arg == "default" else sandbox_arg) if sandbox_arg is not None else cfg["remote"].get("sandbox")
+    effective_approval = (None if approval_arg == "default" else approval_arg) if approval_arg is not None else cfg["remote"].get("approval")
     workdir = str(Path(cwd or cfg["remote"].get("cwd") or paths.HOME).expanduser().resolve())
     if not Path(workdir).is_dir():
         ui.error(f"working directory {workdir} does not exist")
@@ -38,6 +85,8 @@ def start(profile: str | None = None, mode: str | None = None, cwd: str | None =
     if failover is None:
         # A new start uses the CLI default; restart preserves the saved explicit choice.
         failover = cfg["remote"].get("failover", True) if restart else True
+
+    _warn_if_sandbox_unready(effective_sandbox)
 
     box = ui.StatusBox("Mycodex Phone Connection")
     box.update("preflight", f"checking {chosen}")
@@ -73,10 +122,13 @@ def start(profile: str | None = None, mode: str | None = None, cwd: str | None =
         os.kill(stray.pid, signal.SIGTERM)
 
     previous = remote.read_serve_state()
-    changed = (previous.get("profile"), previous.get("mode")) != (chosen, mode) \
-        or cfg["remote"].get("cwd") != workdir or cfg["remote"].get("failover") != failover
+    changed = (previous.get("profile"), previous.get("mode"), previous.get("sandbox"), previous.get("approval")) \
+        != (chosen, mode, effective_sandbox, effective_approval) \
+        or cfg["remote"].get("cwd") != workdir or cfg["remote"].get("failover") != failover \
+        or cfg["remote"].get("sandbox") != effective_sandbox or cfg["remote"].get("approval") != effective_approval
     with config.editing() as data:
-        data["remote"].update({"profile": chosen, "mode": mode, "cwd": workdir, "failover": failover})
+        data["remote"].update({"profile": chosen, "mode": mode, "cwd": workdir, "failover": failover,
+                               "sandbox": effective_sandbox, "approval": effective_approval})
     reloaded = remote.install_unit(workdir)
     remote._systemctl("enable", paths.REMOTE_UNIT)
     running = _active()
@@ -236,8 +288,11 @@ def status(as_json: bool = False) -> int:
         ready = [f"{p.name} ({fmt.windows(quotas[p.name])})" for p in pool
                  if quotas[p.name].eligible and p.name not in paused]
         fields.append(("Rotation pool", ", ".join(ready) or "no ready account — turns fail until a reset"))
+    sb = codex.sandbox_status()
+    sb_detail = f"sandbox={cfg.get('sandbox') or 'default'}, approval={cfg.get('approval') or 'default'}; {sb['summary']}"
     fields += [
         ("Working dir", cfg.get("cwd") or str(paths.HOME)),
+        ("Sandbox / approval", sb_detail),
         ("Switch phone account if unhealthy", "on" if cfg.get("failover") else "off"),
         ("Threads shown", "openai-tagged threads: the same list as every terminal session"),
     ]
@@ -394,16 +449,26 @@ def _looks_like_thread_target(value: str | None) -> bool:
 
 
 def feed_or_seed(target: str | None, name: str | None, message: str | None, project_name: str | None = None,
-                 wait: bool = True) -> int:
+                 wait: bool = True, sandbox: str | None = None, approval: str | None = None,
+                 trust: bool = False, restart: bool = True) -> int:
     """Feed an existing thread when `target` is a thread ID/prefix, otherwise seed a project."""
     if _looks_like_thread_target(target):
+        unsupported = [flag for flag, used in (("--name", name is not None), ("--project", project_name is not None),
+                                               ("--sandbox", sandbox is not None), ("--approval", approval is not None),
+                                               ("--trust", trust), ("--no-restart", not restart)) if used]
+        if unsupported:
+            ui.error(f"these options apply only when seeding a project directory, not an existing thread: {', '.join(unsupported)}",
+                     [f'mycodex feed {target} --message "..." [--no-wait]'])
+            return 2
         assert target is not None
         return feed_thread(target, message, wait=wait)
-    return seed(target, name, message, project_name, wait=wait)
+    return seed(target, name, message, project_name, wait=wait,
+                sandbox=sandbox, approval=approval, trust=trust, restart=restart)
 
 
 def seed(directory: str | None, name: str | None, message: str | None, project_name: str | None = None,
-         wait: bool = True) -> int:
+         wait: bool = True, sandbox: str | None = None, approval: str | None = None,
+         trust: bool = False, restart: bool = True) -> int:
     """Start a new thread inside a project, through the running server's app-server API.
 
     Codex files a thread under a project only when the client passes `projectId` (the TUI
@@ -415,29 +480,189 @@ def seed(directory: str | None, name: str | None, message: str | None, project_n
     if not root_path.is_dir():
         ui.error(f"{root_path} is not a directory")
         return 1
+    cfg = config.load()
+    sandbox_val = _validate_policy(sandbox, config.SANDBOX_MODES, "--sandbox")
+    approval_val = _validate_policy(approval, config.APPROVAL_POLICIES, "--approval")
+    effective_sandbox = sandbox_val or cfg["remote"].get("sandbox")
+    effective_approval = approval_val or cfg["remote"].get("approval")
+    sb = _warn_if_sandbox_unready(effective_sandbox)
+    trusted = codex.trust_project(root_path) if trust else False
+
     root = str(root_path)
     sock, profile = server_socket()
+    start_params: dict[str, Any] = {"cwd": root, "serviceName": "mycodex", "threadSource": "user"}
+    if effective_sandbox:
+        start_params["sandbox"] = effective_sandbox
+    if effective_approval:
+        start_params["approvalPolicy"] = effective_approval
     with appserver.AppServer(sock, timeout=60) as server:
         from . import projects
         project, created = projects.ensure(server, root_path, project_name)
-        thread = server.result("thread/start", {"cwd": root, "projectId": project["id"],
-                                                "serviceName": "mycodex", "threadSource": "user"})["thread"]
+        start_params["projectId"] = project["id"]
+        thread = server.result("thread/start", start_params)["thread"]
         title = name or root_path.name
         server.result("thread/name/set", {"threadId": thread["id"], "name": title})
         text = message or projects.READY_MESSAGE
         started = server.result("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": text}]})
         turn_id = started["turn"]["id"]
         status = _wait_for_turn(server, "Mycodex Seed", thread["id"], turn_id, f"the first turn on {thread['id']}") if wait else "running on the server"
-    ui.panel("Mycodex Seed", [
+
+    restarted, connected = (False, False)
+    if not restart:
+        restart_detail = "disabled (--no-restart)"
+    elif not wait or status == "running on the server" or status.startswith("disconnected"):
+        restart_detail = "skipped while first turn is running/unresolved; run `mycodex remote restart` once finished"
+    elif _active():
+        restarted, connected = restart_if_active(wait=True, reason="project seeded")
+        restart_detail = ("restarted (connected)" if connected else "restarted (connecting)") if restarted else "failed to restart"
+    else:
+        restart_detail = "not needed (no managed service)"
+
+    sandbox_summary = f"{effective_sandbox or 'default'} / {effective_approval or 'default'} ({sb['summary']})"
+    rows = [
         ("Project", f"{project['name']} ({project['id']})" + (", created" if created else "")),
         ("Thread", thread["id"]),
         ("Name", title),
         ("Provider tag", thread.get("modelProvider") or "-"),
+        ("Sandbox", sandbox_summary),
         ("First turn", status),
         ("Phone account", profile or "-"),
+        ("Remote service", restart_detail),
         ("Continue", f"on the phone (project {project['name']}) or `mycodex resume {thread['id']}`"),
-    ])
+    ]
+    if trust:
+        rows.insert(5, ("Workspace trust", "added to config.toml" if trusted else "already trusted"))
+    ui.panel("Mycodex Seed", rows)
     return 1 if status in ("failed", "interrupted") or status.startswith("disconnected") else 0
+
+
+def remote_doctor(as_json: bool = False) -> int:
+    """Diagnose the remote-control relay, mobile visibility, sandboxing, trust, and error logs."""
+    from . import doctor, projects, threads
+
+    report = doctor.Report()
+    data = collect()
+    cfg, info = data["config"], data["service"]
+    service_state = info.get("ActiveState", "not-installed") if info.get("LoadState") != "not-installed" else "not-installed"
+    relay_name = cfg.get("profile")
+    sb_cfg = cfg.get("sandbox") or "default"
+    ap_cfg = cfg.get("approval") or "default"
+    report.add("remote service",
+               doctor.OK if service_state in remote.ACTIVE_STATES else doctor.WARN,
+               f"{service_state}/{info.get('SubState', '-')}, enabled={info.get('UnitFileState', '-')}, "
+               f"mode={cfg.get('mode')}, relay={relay_name or '-'}, sandbox={sb_cfg}, approval={ap_cfg}")
+
+    all_profiles = profiles.all()
+    relay_prof = next((p for p in all_profiles if p.name == relay_name), None) if relay_name else None
+    if not relay_prof or not relay_prof.logged_in:
+        report.add("relay account", doctor.FAIL, f"relay profile {relay_name!r} is missing or not logged in")
+    else:
+        q = quota.fetch(relay_prof)
+        lvl = doctor.FAIL if q.status == "auth invalid" else (doctor.WARN if cfg.get("mode") == "pinned" and q.status != "ready" else doctor.OK)
+        report.add("relay account", lvl, f"{relay_prof.name}: {q.status}" + (f" ({q.error})" if q.error else ""))
+
+    if cfg.get("mode") == "rotating" and service_state in remote.ACTIVE_STATES:
+        port = data["serve_state"].get("proxy_port")
+        health = proxy.health(port) if port else None
+        report.add("rotation proxy", doctor.OK if health else doctor.WARN,
+                   f"127.0.0.1:{port} serving {health.get('current')}, {health.get('requests', 0)} req(s)"
+                   if health else "rotation proxy not answering (mycodex remote restart)")
+
+    service_server = next((s for s in data["servers"] if s["kind"] == "service"), None)
+    socket_path = (service_server or {}).get("socket")
+    proj_rows: list[dict[str, Any]] = []
+    if not service_server or not socket_path:
+        report.add("remote link", doctor.FAIL if service_state in remote.ACTIVE_STATES else doctor.WARN,
+                   "no running remote-control server socket found (mycodex remote start)")
+    else:
+        st = (service_server.get("status") or {}).get("status", service_server.get("error", "unknown"))
+        clients_list = service_server.get("clients") or []
+        report.add("remote link", doctor.OK if st == "connected" else doctor.FAIL,
+                   f"pid {service_server['pid']} ({service_server['profile']}): {st}, uptime {service_server['uptime']}")
+        if clients_list:
+            client_desc = ", ".join(
+                f"{c.get('displayName', c.get('clientId'))} (app {c.get('appVersion', '?')}, seen {fmt.age(c.get('lastSeenAt'))})"
+                for c in clients_list)
+            report.add("paired clients", doctor.OK, client_desc)
+        else:
+            report.add("paired clients", doctor.WARN, "none paired yet (mycodex remote pair)")
+
+        try:
+            with appserver.AppServer(socket_path, timeout=20) as server:
+                proj_rows = projects.pages(server, "project/list")
+                root_paths = []
+                missing_roots = []
+                for p in proj_rows:
+                    for r in p.get("roots", []):
+                        raw = r.get("path")
+                        if not raw:
+                            continue
+                        rp = Path(raw).expanduser().resolve()
+                        root_paths.append(rp)
+                        if not rp.is_dir():
+                            missing_roots.append(f"{p.get('name')}:{raw}")
+                report.add("projects", doctor.WARN if missing_roots else (doctor.OK if proj_rows else doctor.INFO),
+                           f"{len(proj_rows)} registered"
+                           + (f"; missing roots on disk: {', '.join(missing_roots)}" if missing_roots else ""))
+
+                mobile_threads = projects.pages(server, "thread/list", {
+                    "currentAccountOnly": True, "archived": False,
+                    "sourceKinds": ["cli", "vscode", "exec", "appServer"],
+                })
+                loaded = projects.pages(server, "thread/loaded/list")
+                no_project = []
+                for t in mobile_threads:
+                    if t.get("projectId") or not t.get("cwd"):
+                        continue
+                    cwd_path = Path(t["cwd"]).expanduser().resolve()
+                    if any(cwd_path == rp or rp in cwd_path.parents for rp in root_paths):
+                        no_project.append(t["id"][:8])
+                report.add("mobile thread list", doctor.OK if mobile_threads else doctor.INFO,
+                           f"{len(mobile_threads)} visible thread(s), {len(loaded)} loaded in memory"
+                           + (f"; {len(no_project)} in project folders lack projectId (`mycodex threads link`)"
+                              if no_project else ""))
+        except appserver.AppServerError as exc:
+            report.add("app-server probe", doctor.FAIL, f"RPC probe failed: {exc}")
+
+    hidden_threads = threads.hidden()
+    if hidden_threads:
+        report.add("hidden threads", doctor.WARN,
+                   f"{len(hidden_threads)} non-openai thread(s) invisible on mobile (`mycodex threads adopt <ID>`)")
+
+    sb = codex.sandbox_status()
+    sb_ok = sb["ready"] or cfg.get("sandbox") == "danger-full-access"
+    report.add("sandbox / bwrap", doctor.OK if sb_ok else doctor.WARN,
+               sb["summary"] + (f" (remote sandbox override: {cfg.get('sandbox')})" if cfg.get("sandbox")
+                                else ("" if sb["ready"] else " — set `--sandbox danger-full-access --approval never` if mobile commands fail")))
+
+    trusted = codex.trusted_projects()
+    roots = [r.get("path") for p in proj_rows for r in p.get("roots", []) if r.get("path")]
+    if not roots:
+        roots = [r for p in codex.projects() for r in (p.get("roots") or "").split(";") if r]
+    untrusted = [r for r in roots if trusted.get(codex._resolve_project_key(r), trusted.get(r)) != "trusted"]
+    trust_warns = codex.recent_log_errors(86400, "%until the project is trusted%")
+    global_state_exists = (paths.SHARED_CODEX_HOME / ".codex-global-state.json").is_file()
+    report.add("workspace trust",
+               doctor.WARN if (untrusted and trust_warns) else (doctor.INFO if untrusted else doctor.OK),
+               (f"{len(untrusted)} project root(s) untrusted in config.toml (`--trust` on seed/add)"
+                if untrusted else "all registered project roots trusted")
+               + (f"; global-state={ 'present' if global_state_exists else 'absent' }"))
+
+    auth_errs = codex.recent_log_errors(3600, "%token_invalidated%") + codex.recent_log_errors(3600, "%refresh_token_reused%")
+    ws_errs = codex.recent_log_errors(3600, "%WebSocket protocol error%")
+    proxy_errs = codex.recent_proxy_errors(since_seconds=3600)
+    log_issues: list[str] = []
+    if auth_errs:
+        log_issues.append(f"{len(auth_errs)} auth error(s)")
+    if proxy_errs:
+        log_issues.append(f"{len(proxy_errs)} proxy error(s)")
+    if ws_errs:
+        log_issues.append(f"{len(ws_errs)} websocket reset(s)")
+    report.add("logs / errors",
+               doctor.WARN if (auth_errs or proxy_errs) else doctor.OK,
+               ", ".join(log_issues) if log_issues else "no auth or proxy errors in recent Codex/proxy logs")
+
+    return doctor.render(report, "Mycodex Remote Doctor", as_json)
 
 
 def foreground(profile: str | None, mode: str | None) -> int:
